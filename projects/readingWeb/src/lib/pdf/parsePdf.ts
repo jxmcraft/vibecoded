@@ -1,7 +1,10 @@
 "use client";
 
-import { v4 as uuid } from "uuid";
 import type { ImageBlock, TextBlock } from "./types";
+
+function uuid(): string {
+  return crypto.randomUUID();
+}
 
 let workerConfigured = false;
 

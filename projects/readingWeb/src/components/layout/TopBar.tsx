@@ -5,26 +5,43 @@ import { useReader } from "../../context/ReaderContext";
 
 export function TopBar() {
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const { loadFile } = useReader();
+  const { loadFile, setTheme, theme, toggleSidebar, sidebarCollapsed } = useReader();
 
   function handleClickUpload() {
     inputRef.current?.click();
   }
 
   async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
+    const input = event.target;
+    const file = input.files?.[0];
     if (!file) return;
-    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
-      // Basic validation; a richer error surface lives in ReaderArea.
-      alert("Please select a PDF file.");
-      return;
+
+    try {
+      if (
+        file.type !== "application/pdf" &&
+        !file.name.toLowerCase().endsWith(".pdf")
+      ) {
+        alert("Please select a PDF file.");
+        return;
+      }
+
+      await loadFile(file);
+    } finally {
+      input.value = "";
     }
-    await loadFile(file);
   }
 
   return (
     <header className="top-bar">
       <div className="top-bar-left">
+        <button
+          className={`secondary-button topbar-collapse-button ${sidebarCollapsed ? "is-active" : ""}`}
+          type="button"
+          onClick={toggleSidebar}
+          aria-label={sidebarCollapsed ? "Expand left sidebar" : "Collapse left sidebar"}
+        >
+          {sidebarCollapsed ? "Show" : "Hide"}
+        </button>
         <span className="logo">NovelFlow</span>
         <button className="primary-button" type="button" onClick={handleClickUpload}>
           Upload PDF
@@ -37,14 +54,29 @@ export function TopBar() {
           onChange={handleFileChange}
         />
       </div>
-      <div className="top-bar-right">
-        <button aria-label="Light theme" className="icon-button">
-          ☀️
+      <div className="top-bar-right" role="group" aria-label="Theme selection">
+        <button
+          aria-label="Light theme"
+          className={`icon-button ${theme === "light" ? "is-active" : ""}`}
+          type="button"
+          onClick={() => setTheme("light")}
+        >
+          Light
         </button>
-        <button aria-label="Dark theme" className="icon-button">
-          🌙
+        <button
+          aria-label="Dark theme"
+          className={`icon-button ${theme === "dark" ? "is-active" : ""}`}
+          type="button"
+          onClick={() => setTheme("dark")}
+        >
+          Dark
         </button>
-        <button aria-label="Greyscale theme" className="icon-button">
+        <button
+          aria-label="Greyscale theme"
+          className={`icon-button ${theme === "greyscale" ? "is-active" : ""}`}
+          type="button"
+          onClick={() => setTheme("greyscale")}
+        >
           B/W
         </button>
       </div>

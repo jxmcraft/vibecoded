@@ -47,6 +47,8 @@ export type ParserMode = "adaptive" | "fallback";
 
 export type ParserConfidence = "high" | "medium" | "low";
 
+export type ThemeMode = "light" | "dark" | "greyscale";
+
 export type ParserStrategy = "strict" | "tolerant" | "fallback";
 
 export type CleansedDocument = {

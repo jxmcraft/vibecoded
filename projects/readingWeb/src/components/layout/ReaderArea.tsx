@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback, useEffect, useRef, type CSSProperties } from "react";
 import { useReader } from "../../context/ReaderContext";
 
 export function ReaderArea() {
@@ -12,11 +13,91 @@ export function ReaderArea() {
     parserMode,
     parserConfidence,
     parserSummary,
-    setParserMode
+    fontSize,
+    pendingSeekProgress,
+    clearPendingSeekProgress,
+    updateReadingProgress
   } = useReader();
+  const scrollRef = useRef<HTMLElement | null>(null);
+  const frameRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (frameRef.current !== null) {
+        window.cancelAnimationFrame(frameRef.current);
+      }
+    };
+  }, []);
+
+  const scheduleProgressRead = useCallback(() => {
+    if (status !== "ready") {
+      return;
+    }
+
+    if (frameRef.current !== null) {
+      return;
+    }
+
+    frameRef.current = window.requestAnimationFrame(() => {
+      const container = scrollRef.current;
+      frameRef.current = null;
+
+      if (!container) {
+        return;
+      }
+
+      updateReadingProgress(readProgressFromViewport(container));
+    });
+  }, [status, updateReadingProgress]);
+
+  useEffect(() => {
+    if (status !== "ready") {
+      return;
+    }
+
+    function onWindowScroll() {
+      const container = scrollRef.current;
+      if (!container || isContainerScrollable(container)) {
+        return;
+      }
+
+      scheduleProgressRead();
+    }
+
+    window.addEventListener("scroll", onWindowScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onWindowScroll);
+  }, [scheduleProgressRead, status]);
+
+  useEffect(() => {
+    if (status !== "ready" || pendingSeekProgress === undefined) {
+      return;
+    }
+
+    const container = scrollRef.current;
+    if (!container) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      if (isContainerScrollable(container)) {
+        container.scrollTop = getScrollTopForProgress(container, pendingSeekProgress);
+      } else {
+        const target = getWindowScrollTopForProgress(pendingSeekProgress);
+        window.scrollTo({ top: target, behavior: "auto" });
+      }
+
+      clearPendingSeekProgress();
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [blocks.length, clearPendingSeekProgress, pendingSeekProgress, status]);
+
+  function handleScroll() {
+    scheduleProgressRead();
+  }
 
   return (
-    <main className="reader-area">
+    <main ref={scrollRef} className="reader-area" onScroll={handleScroll}>
       {status === "idle" && (
         <div className="reader-empty-state">
           <h1>Drag &amp; Drop PDF</h1>
@@ -39,7 +120,10 @@ export function ReaderArea() {
       )}
 
       {status === "ready" && (
-        <article className="reader-column">
+        <article
+          className="reader-column"
+          style={{ "--reader-font-size": `${fontSize}px` } as CSSProperties}
+        >
           {fileName && <h1 className="reader-title">{fileName}</h1>}
           {parsed && (
             <section
@@ -50,22 +134,6 @@ export function ReaderArea() {
                   {parserMode === "adaptive" ? "Adaptive" : "Conservative"} mode
                 </strong>
                 {parserSummary && <p>{parserSummary}</p>}
-              </div>
-              <div className="reader-parser-actions">
-                <button
-                  type="button"
-                  className={parserMode === "adaptive" ? "primary-button" : "secondary-button"}
-                  onClick={() => setParserMode("adaptive")}
-                >
-                  Adaptive
-                </button>
-                <button
-                  type="button"
-                  className={parserMode === "fallback" ? "primary-button" : "secondary-button"}
-                  onClick={() => setParserMode("fallback")}
-                >
-                  Conservative
-                </button>
               </div>
             </section>
           )}
@@ -111,5 +179,51 @@ export function ReaderArea() {
       )}
     </main>
   );
+}
+
+function readProgressFromViewport(container: HTMLElement) {
+  if (isContainerScrollable(container)) {
+    return getContainerProgress(container);
+  }
+
+  const root = document.documentElement;
+  const maxScrollTop = Math.max(root.scrollHeight - window.innerHeight, 0);
+  if (maxScrollTop <= 0) {
+    return 0;
+  }
+
+  return (window.scrollY / maxScrollTop) * 100;
+}
+
+function isContainerScrollable(container: HTMLElement) {
+  return container.scrollHeight - container.clientHeight > 8;
+}
+
+function getContainerProgress(container: HTMLElement) {
+  const maxScrollTop = Math.max(container.scrollHeight - container.clientHeight, 0);
+  if (maxScrollTop <= 0) {
+    return 0;
+  }
+
+  return (container.scrollTop / maxScrollTop) * 100;
+}
+
+function getScrollTopForProgress(container: HTMLElement, progress: number) {
+  const maxScrollTop = Math.max(container.scrollHeight - container.clientHeight, 0);
+  if (maxScrollTop <= 0) {
+    return 0;
+  }
+
+  return (progress / 100) * maxScrollTop;
+}
+
+function getWindowScrollTopForProgress(progress: number) {
+  const root = document.documentElement;
+  const maxScrollTop = Math.max(root.scrollHeight - window.innerHeight, 0);
+  if (maxScrollTop <= 0) {
+    return 0;
+  }
+
+  return (progress / 100) * maxScrollTop;
 }
 
