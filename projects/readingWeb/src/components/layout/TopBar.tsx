@@ -1,9 +1,11 @@
 "use client";
 
 import { useRef } from "react";
+import { useRouter } from "next/navigation";
 import { useReader } from "../../context/ReaderContext";
 
 export function TopBar() {
+  const router = useRouter();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const { loadFile, setTheme, theme, toggleSidebar, sidebarCollapsed } = useReader();
 
@@ -25,7 +27,10 @@ export function TopBar() {
         return;
       }
 
-      await loadFile(file);
+      const docId = await loadFile(file);
+      if (docId) {
+        router.push(`/reader/${encodeURIComponent(docId)}`);
+      }
     } finally {
       input.value = "";
     }
@@ -45,6 +50,9 @@ export function TopBar() {
         <span className="logo">NovelFlow</span>
         <button className="primary-button" type="button" onClick={handleClickUpload}>
           Upload PDF
+        </button>
+        <button className="secondary-button" type="button" onClick={() => router.push("/library")}>
+          Library
         </button>
         <input
           ref={inputRef}

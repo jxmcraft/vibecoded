@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import "./globals.css";
 import { ReaderProvider } from "../context/ReaderContext";
+import { LibraryProvider } from "../context/LibraryContext";
 
 export const metadata = {
   title: "NovelFlow",
@@ -9,9 +10,11 @@ export const metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" data-theme="light">
+    <html lang="en" data-theme="light" suppressHydrationWarning>
       <body>
-        <ReaderProvider>{children}</ReaderProvider>
+        <ReaderProvider>
+          <LibraryProvider>{children}</LibraryProvider>
+        </ReaderProvider>
       </body>
     </html>
   );

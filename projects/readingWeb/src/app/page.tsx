@@ -1,6 +1,6 @@
-import { AppShell } from "../components/layout/AppShell";
+import { redirect } from "next/navigation";
 
 export default function HomePage() {
-  return <AppShell />;
+  redirect("/library");
 }
 

@@ -1,3 +1,5 @@
 {
+  "/reader/[docId]/page": "app/reader/[docId]/page.js",
+  "/library/page": "app/library/page.js",
   "/page": "app/page.js"
 }

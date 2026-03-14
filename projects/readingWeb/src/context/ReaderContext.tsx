@@ -15,6 +15,9 @@ import {
   extractTextBlocks
 } from "../lib/pdf/parsePdf";
 import { cleanseDocument } from "@/lib/pdf/cleanse";
+import { computeDocumentId } from "@/lib/pdf/documentId";
+import { generatePdfThumbnail } from "@/lib/pdf/thumbnail";
+import { getStoredPdf, saveStoredPdf, touchStoredPdf } from "@/lib/storage/pdfIndexedDB";
 import type {
   CleansedBlock,
   CleansedDocument,
@@ -67,7 +70,8 @@ type ReaderState = {
 };
 
 type ReaderContextValue = ReaderState & {
-  loadFile: (file: File) => Promise<void>;
+  loadFile: (file: File) => Promise<string | undefined>;
+  loadDocumentById: (documentId: string) => Promise<boolean>;
   setParserMode: (mode: ParserMode) => void;
   setTheme: (theme: ThemeMode) => void;
   setFontSize: (fontSize: number) => void;
@@ -136,7 +140,7 @@ export function ReaderProvider({ children }: { children: ReactNode }) {
     });
   }, [preferencesLoaded, state.fontSize, state.sidebarCollapsed, state.theme]);
 
-  const loadFile = useCallback(async (file: File) => {
+  const openFileInReader = useCallback(async (file: File, stableDocId?: string) => {
     try {
       setState((prev) => ({
         ...prev,
@@ -151,10 +155,25 @@ export function ReaderProvider({ children }: { children: ReactNode }) {
       const parsed = cleanseDocument(textBlocks);
       const parsedWithImages = injectImageBlocks(parsed, imageBlocks);
 
-      const docId = await computeDocumentId(file);
+      const docId = stableDocId ?? (await computeDocumentId(file));
       const savedProgress = readStoredProgress(docId);
       const activeBlocks = parsedWithImages.modes[parsedWithImages.defaultMode];
       const savedBookmarks = readStoredBookmarks(docId);
+
+      try {
+        const thumbnailDataUrl = await generatePdfThumbnail(pdf);
+        await saveStoredPdf({
+          docId,
+          fileName: file.name,
+          fileSize: file.size,
+          uploadedAt: Date.now(),
+          thumbnailDataUrl,
+          lastOpenedAt: Date.now(),
+          blob: file
+        });
+      } catch {
+        // Keep reader flow working even if local persistence fails.
+      }
 
       setState((prev) => ({
         ...prev,
@@ -174,6 +193,8 @@ export function ReaderProvider({ children }: { children: ReactNode }) {
         // Always show navigation controls once a document is ready.
         sidebarCollapsed: false
       }));
+
+      return docId;
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to load PDF document.";
@@ -193,8 +214,66 @@ export function ReaderProvider({ children }: { children: ReactNode }) {
         checkpoints: [],
         bookmarks: []
       }));
+
+      return undefined;
     }
   }, []);
+
+  const loadFile = useCallback(async (file: File) => {
+    return openFileInReader(file);
+  }, [openFileInReader]);
+
+  const loadDocumentById = useCallback(
+    async (documentId: string) => {
+      try {
+        const stored = await getStoredPdf(documentId);
+        if (!stored) {
+          setState((prev) => ({
+            ...prev,
+            status: "error",
+            error: "That document is no longer in your local library.",
+            documentId: undefined,
+            fileName: undefined,
+            blocks: [],
+            parsed: undefined,
+            parserMode: "adaptive",
+            parserConfidence: undefined,
+            parserSummary: undefined,
+            readingProgress: 0,
+            pendingSeekProgress: undefined,
+            checkpoints: [],
+            bookmarks: []
+          }));
+          return false;
+        }
+
+        const mimeType = stored.blob.type || "application/pdf";
+        const file = new File([stored.blob], stored.fileName, { type: mimeType });
+        await touchStoredPdf(documentId);
+        const loadedDocId = await openFileInReader(file, documentId);
+        return Boolean(loadedDocId);
+      } catch {
+        setState((prev) => ({
+          ...prev,
+          status: "error",
+          error: "Failed to open this document from your local library.",
+          documentId: undefined,
+          fileName: undefined,
+          blocks: [],
+          parsed: undefined,
+          parserMode: "adaptive",
+          parserConfidence: undefined,
+          parserSummary: undefined,
+          readingProgress: 0,
+          pendingSeekProgress: undefined,
+          checkpoints: [],
+          bookmarks: []
+        }));
+        return false;
+      }
+    },
+    [openFileInReader]
+  );
 
   const setParserMode = useCallback((mode: ParserMode) => {
     setState((prev) => {
@@ -415,6 +494,7 @@ export function ReaderProvider({ children }: { children: ReactNode }) {
     () => ({
       ...state,
       loadFile,
+      loadDocumentById,
       setParserMode,
       setTheme,
       setFontSize,
@@ -433,6 +513,7 @@ export function ReaderProvider({ children }: { children: ReactNode }) {
       clearPendingSeekProgress,
       jumpToBookmark,
       jumpToCheckpoint,
+      loadDocumentById,
       loadFile,
       removeBookmark,
       seekToProgress,
@@ -455,14 +536,6 @@ export function useReader() {
     throw new Error("useReader must be used within ReaderProvider");
   }
   return ctx;
-}
-
-async function computeDocumentId(file: File): Promise<string> {
-  const data = await file.arrayBuffer();
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-  return `${file.name}-${hashHex.slice(0, 16)}`;
 }
 
 function injectImageBlocks(

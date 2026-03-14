@@ -164,6 +164,8 @@ Optional (Future): The system could analyze text for punctuation or keywords (e.
 FR-07: Bookmarks & Progress Persistence
 Description: Users can save their reading position and return to it later.
 
+
+
 Requirements:
 
 Auto-Save: The user's current scroll position (or the last word read) should be automatically saved when they leave the page.
@@ -228,4 +230,62 @@ Mobile App: Wrapper for iOS and Android for a more native experience.
 AI-Powered Pacing: Automatically detect scene intensity based on text analysis to control Fast Reader speed.
 
 Fine-Grained Reading Timeline: Add an always-available progress timeline or slider that reflects current reading position, saved progress, and quick navigation points through a long chapter or volume.
+
+8. Implementation Status Snapshot (15 Mar, 2026)
+Legend: Implemented | Partial | Not Implemented
+
+FR-01 PDF Upload & Processing: Partial
+- Implemented: PDF upload, file type checks, client-side parsing pipeline, error state handling.
+- Partial/Missing: explicit upload progress indicator and richer file-size/corruption messages.
+
+FR-02 Cleansing & Reflow: Partial
+- Implemented: repeated furniture detection/removal, column-aware reflow, paragraph/heading rendering, chapter checkpoint extraction.
+- Partial/Missing: known blockers remain for some PDFs (drop-cap split, surviving page numbers, space-only indentation flattening, mixed-font grouping edge cases).
+
+FR-03 Image Detection & Preservation: Implemented
+- Extracted page images are preserved and rendered inline in reflowed reading order.
+
+FR-04 Theme Switching & Persistence: Implemented
+- Light/Dark/Greyscale modes with persistent local preference storage.
+
+FR-05 Auto-Reader (Text-to-Speech): Not Implemented
+
+FR-06 Fast Reader (RSVP) with Pacing Control: Not Implemented
+
+FR-07 Bookmarks & Progress Persistence: Partial
+- Implemented: auto progress save, manual bookmarks, bookmark list/jump/delete, reading progress slider.
+- Partial/Missing: resume confirmation prompt is not yet implemented.
+
+Non-Functional Snapshot
+- Privacy (client-side only): Implemented.
+- Performance KPI (<10 seconds for 300 pages): Not yet benchmark-validated.
+
+9. Approved Enhancement: Home Library (MVP)
+Goal: Add a dedicated library home page where uploaded PDFs are saved locally and displayed with title + cover image.
+
+Scope
+- Add `/library` as the default home route.
+- Persist uploaded PDFs in browser IndexedDB (blob + metadata).
+- Show library cards with PDF file name and generated first-page cover thumbnail.
+- Allow opening a saved document into `/reader/[docId]`.
+- Allow deleting saved documents from the local library.
+
+Data Model (Local)
+- `docId`: stable document id
+- `fileName`: uploaded filename
+- `fileSize`: bytes
+- `uploadedAt`: timestamp
+- `lastOpenedAt`: timestamp
+- `thumbnailDataUrl`: first-page thumbnail data URL
+- `blob`: original PDF binary
+
+Storage/Privacy Constraints
+- All storage remains local to the browser/device.
+- No cloud sync in MVP.
+- Storage is quota-limited by the browser; app should remain functional even if save fails.
+
+Out Of Scope (MVP)
+- Cross-device sync/account system.
+- Backfill migration from legacy progress/bookmark-only entries.
+- Auto-reader / fast-reader implementation.
 
