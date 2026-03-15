@@ -6,12 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "clean:packgz": "find .next -type f -name '*.pack.gz' -delete"
   },
   "dependencies": {
     "jszip": "^3.10.1",
     "next": "^15.0.0",
-    "pdfjs-dist": "^5.5.207",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"
   },

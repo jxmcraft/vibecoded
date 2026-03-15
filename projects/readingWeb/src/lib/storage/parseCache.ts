@@ -9,6 +9,8 @@ import type { CleansedDocument, ParserMode } from "../pdf/types";
 
 // Bump this constant when the parser logic changes to invalidate stale caches.
 const CACHE_SCHEMA_VERSION = 2;
+const MAX_CACHE_ENTRIES = 12;
+const MAX_CACHE_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 
 const CACHE_DB_NAME = "novelflow-parse-cache";
 const CACHE_STORE = "parsed-documents";
@@ -105,13 +107,55 @@ export async function saveCachedParse(
         resolve();
       };
       tx.onerror = () => {
-        db.close();
         resolve();
       };
     });
+
+    // Keep the cache bounded so old/rarely used entries do not grow indefinitely.
+    await pruneParseCache(db);
+    db.close();
   } catch {
     // Cache failures are non-fatal.
   }
+}
+
+async function pruneParseCache(db: IDBDatabase): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const tx = db.transaction(CACHE_STORE, "readwrite");
+    const store = tx.objectStore(CACHE_STORE);
+    const req = store.getAll();
+
+    req.onsuccess = () => {
+      const rows = (req.result as CacheRow[]) ?? [];
+      const now = Date.now();
+      const toDelete = new Set<string>();
+
+      const validRows: CacheRow[] = [];
+      for (const row of rows) {
+        const isSchemaValid = row.schemaVersion === CACHE_SCHEMA_VERSION;
+        const isFresh = now - row.cachedAt <= MAX_CACHE_AGE_MS;
+        if (isSchemaValid && isFresh) {
+          validRows.push(row);
+          continue;
+        }
+
+        toDelete.add(row.docId);
+      }
+
+      validRows.sort((left, right) => right.cachedAt - left.cachedAt);
+      for (const row of validRows.slice(MAX_CACHE_ENTRIES)) {
+        toDelete.add(row.docId);
+      }
+
+      for (const key of toDelete) {
+        store.delete(key);
+      }
+    };
+
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => resolve();
+    tx.onabort = () => resolve();
+  });
 }
 
 // ─── Per-document mode preference (localStorage) ──────────────────────────────

@@ -7,6 +7,13 @@ function uuid(): string {
 }
 
 let workerConfigured = false;
+let pdfJsLoadPromise: Promise<any> | null = null;
+
+const PDFJS_VERSION = "3.11.174";
+const PDFJS_CDN_BASES = [
+  `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}`,
+  `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}`,
+];
 
 declare global {
   interface Window {
@@ -25,36 +32,63 @@ async function initPdfJs() {
     if (!workerConfigured) {
       workerConfigured = true;
       window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-        "https://unpkg.com/pdfjs-dist@4.10.38/build/pdf.worker.min.js";
+        `${PDFJS_CDN_BASES[0]}/build/pdf.worker.min.js`;
     }
     return window.pdfjsLib;
   }
 
-  // Load PDF.js from CDN
+  if (!pdfJsLoadPromise) {
+    pdfJsLoadPromise = loadPdfJsWithFallback();
+  }
+
+  return pdfJsLoadPromise;
+}
+
+async function loadPdfJsWithFallback() {
+  let lastError: Error | undefined;
+
+  for (const baseUrl of PDFJS_CDN_BASES) {
+    try {
+      await loadPdfJsFromBase(baseUrl);
+      return window.pdfjsLib;
+    } catch (error) {
+      lastError =
+        error instanceof Error
+          ? error
+          : new Error("Failed to load PDF.js runtime.");
+    }
+  }
+
+  throw (
+    lastError ??
+    new Error("Failed to load PDF.js from all configured CDNs.")
+  );
+}
+
+async function loadPdfJsFromBase(baseUrl: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    const script = document.createElement('script');
-    // Use jsDelivr which serves proper UMD builds that work with script tags
-    script.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+    const script = document.createElement("script");
+    script.src = `${baseUrl}/build/pdf.min.js`;
     script.async = true;
     script.onload = () => {
       if (!window.pdfjsLib) {
-        reject(new Error('PDF.js library not loaded correctly'));
+        reject(new Error("PDF.js library not loaded correctly."));
         return;
       }
+
       if (!workerConfigured) {
         workerConfigured = true;
         window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-          "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+          `${baseUrl}/build/pdf.worker.min.js`;
       }
+
       resolve();
     };
     script.onerror = () => {
-      reject(new Error('Failed to load PDF.js from CDN'));
+      reject(new Error(`Failed to load PDF.js from ${baseUrl}.`));
     };
     document.head.appendChild(script);
   });
-
-  return window.pdfjsLib;
 }
 
 export async function loadPdfFromFile(file: File): Promise<any> {

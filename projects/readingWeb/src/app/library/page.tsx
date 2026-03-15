@@ -12,7 +12,16 @@ export default function LibraryPage() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const { entries, loading, deleteEntry, refreshLibrary, storage } = useLibrary();
-  const { loadFile, setTheme, theme, loadingPhase, loadingProgress, error: readerError } = useReader();
+  const {
+    loadFile,
+    setTheme,
+    theme,
+    loadingPhase,
+    loadingProgress,
+    error: readerError,
+    persistUploadsToLibrary,
+    setPersistUploadsToLibrary
+  } = useReader();
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | undefined>();
   const [query, setQuery] = useState("");
@@ -178,6 +187,15 @@ export default function LibraryPage() {
           <option value="name">Sort: Name</option>
           <option value="size">Sort: File size</option>
         </select>
+        <label className="label" htmlFor="library-save-toggle">
+          <input
+            id="library-save-toggle"
+            type="checkbox"
+            checked={persistUploadsToLibrary}
+            onChange={(event) => setPersistUploadsToLibrary(event.target.checked)}
+          />{" "}
+          Save new uploads to library
+        </label>
       </section>
 
       <section className={`library-storage ${quotaHigh ? "is-warning" : ""}`}>

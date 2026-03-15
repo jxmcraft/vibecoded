@@ -109,6 +109,7 @@ type ReaderState = {
   checkpoints: ChapterCheckpoint[];
   bookmarks: ReaderBookmark[];
   sidebarCollapsed: boolean;
+  persistUploadsToLibrary: boolean;
   ttsSupported: boolean;
   ttsStatus: TtsStatus;
   ttsRate: number;
@@ -127,7 +128,12 @@ type ReaderState = {
 };
 
 type ReaderContextValue = ReaderState & {
-  loadFile: (file: File) => Promise<string | undefined>;
+  loadFile: (
+    file: File,
+    options?: {
+      persistToLibrary?: boolean;
+    }
+  ) => Promise<string | undefined>;
   loadDocumentById: (documentId: string) => Promise<boolean>;
   setParserMode: (mode: ParserMode) => void;
   setTheme: (theme: ThemeMode) => void;
@@ -142,6 +148,7 @@ type ReaderContextValue = ReaderState & {
   jumpToBookmark: (bookmarkId: string) => void;
   jumpToCheckpoint: (checkpointId: string) => void;
   toggleSidebar: () => void;
+  setPersistUploadsToLibrary: (enabled: boolean) => void;
   playTts: () => void;
   pauseTts: () => void;
   resumeTts: () => void;
@@ -169,6 +176,7 @@ const MIN_TTS_RATE = 0.5;
 const MAX_TTS_RATE = 3;
 const DEFAULT_TTS_HIGHLIGHT_COLOR = "#ffd54a";
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+const MAX_PARSE_CACHE_BYTES = 12 * 1024 * 1024;
 const PDF_MIME_TYPE = "application/pdf";
 const EPUB_MIME_TYPE = "application/epub+zip";
 
@@ -185,6 +193,7 @@ export function ReaderProvider({ children }: { children: ReactNode }) {
     checkpoints: [],
     bookmarks: [],
     sidebarCollapsed: false,
+    persistUploadsToLibrary: false,
     ttsSupported: false,
     ttsStatus: "idle",
     ttsRate: 1,
@@ -210,6 +219,10 @@ export function ReaderProvider({ children }: { children: ReactNode }) {
         prev.status === "idle"
           ? (preferences.sidebarCollapsed ?? prev.sidebarCollapsed)
           : prev.sidebarCollapsed,
+      persistUploadsToLibrary:
+        typeof preferences.persistUploadsToLibrary === "boolean"
+          ? preferences.persistUploadsToLibrary
+          : prev.persistUploadsToLibrary,
       ttsSupported: supported,
       ttsRate: preferences.ttsRate ?? prev.ttsRate,
       ttsVoiceURI: preferences.ttsVoiceURI,
@@ -254,6 +267,7 @@ export function ReaderProvider({ children }: { children: ReactNode }) {
       fontFamily: state.fontFamily,
       fontSize: state.fontSize,
       sidebarCollapsed: state.sidebarCollapsed,
+      persistUploadsToLibrary: state.persistUploadsToLibrary,
       ttsRate: state.ttsRate,
       ttsVoiceURI: state.ttsVoiceURI,
       ttsStartMode: state.ttsStartMode,
@@ -265,6 +279,7 @@ export function ReaderProvider({ children }: { children: ReactNode }) {
     state.fontFamily,
     state.fontSize,
     state.sidebarCollapsed,
+    state.persistUploadsToLibrary,
     state.theme,
     state.ttsRate,
     state.ttsVoiceURI,
@@ -273,7 +288,13 @@ export function ReaderProvider({ children }: { children: ReactNode }) {
     state.ttsHighlightColor
   ]);
 
-  const openFileInReader = useCallback(async (file: File, stableDocId?: string) => {
+  const openFileInReader = useCallback(async (
+    file: File,
+    stableDocId?: string,
+    options?: {
+      persistToLibrary?: boolean;
+    }
+  ) => {
     try {
       const extension = getFileExtension(file.name);
       const isPdf = file.type === PDF_MIME_TYPE || extension === "pdf";
@@ -308,10 +329,12 @@ export function ReaderProvider({ children }: { children: ReactNode }) {
       const pdfLoadPromise = isPdf ? loadPdfFromFile(file) : undefined;
 
       const docId = stableDocId ?? (await computeDocumentId(file));
+      const shouldPersistToLibrary = options?.persistToLibrary ?? state.persistUploadsToLibrary;
+      const shouldUseParseCache = isPdf && file.size <= MAX_PARSE_CACHE_BYTES;
 
       // Use cached parse result when available to skip expensive cleanseDocument().
       let parsed: CleansedDocument;
-      const cachedParse = await getCachedParse(docId);
+      const cachedParse = shouldUseParseCache ? await getCachedParse(docId) : undefined;
       if (cachedParse) {
         setState((prev) => ({ ...prev, loadingPhase: "using-cache", loadingProgress: 100 }));
         parsed = cachedParse;
@@ -372,8 +395,10 @@ export function ReaderProvider({ children }: { children: ReactNode }) {
           }
         }
 
-        // Save to cache in background — non-blocking, failure is safe.
-        saveCachedParse(docId, parsed).catch(() => {});
+        // Cache only smaller PDFs. EPUBs with inline images and large files duplicate too much data.
+        if (shouldUseParseCache) {
+          saveCachedParse(docId, parsed).catch(() => {});
+        }
       }
 
       // Apply user's stored mode preference for this document if set.
@@ -405,29 +430,31 @@ export function ReaderProvider({ children }: { children: ReactNode }) {
       const nextTtsSentences = buildTtsSentenceUnits(activeBlocks);
       const savedBookmarks = readStoredBookmarks(docId);
 
-      try {
-        setState((prev) => ({ ...prev, loadingPhase: "saving-library" }));
-        let thumbnailDataUrl: string | undefined;
-        if (isPdf) {
-          const pdf = await pdfLoadPromise;
-          if (!pdf) {
-            throw new Error("Failed to load PDF document.");
+      if (shouldPersistToLibrary) {
+        try {
+          setState((prev) => ({ ...prev, loadingPhase: "saving-library" }));
+          let thumbnailDataUrl: string | undefined;
+          if (isPdf) {
+            const pdf = await pdfLoadPromise;
+            if (!pdf) {
+              throw new Error("Failed to load PDF document.");
+            }
+
+            thumbnailDataUrl = await generatePdfThumbnail(pdf);
           }
 
-          thumbnailDataUrl = await generatePdfThumbnail(pdf);
+          await saveStoredPdf({
+            docId,
+            fileName: file.name,
+            fileSize: file.size,
+            uploadedAt: Date.now(),
+            thumbnailDataUrl,
+            lastOpenedAt: Date.now(),
+            blob: file
+          });
+        } catch {
+          // Keep reader flow working even if local persistence fails.
         }
-
-        await saveStoredPdf({
-          docId,
-          fileName: file.name,
-          fileSize: file.size,
-          uploadedAt: Date.now(),
-          thumbnailDataUrl,
-          lastOpenedAt: Date.now(),
-          blob: file
-        });
-      } catch {
-        // Keep reader flow working even if local persistence fails.
       }
 
       setTtsSentences(nextTtsSentences);
@@ -501,10 +528,15 @@ export function ReaderProvider({ children }: { children: ReactNode }) {
 
       return undefined;
     }
-  }, []);
+  }, [state.persistUploadsToLibrary]);
 
-  const loadFile = useCallback(async (file: File) => {
-    return openFileInReader(file);
+  const loadFile = useCallback(async (
+    file: File,
+    options?: {
+      persistToLibrary?: boolean;
+    }
+  ) => {
+    return openFileInReader(file, undefined, options);
   }, [openFileInReader]);
 
   const loadDocumentById = useCallback(
@@ -545,7 +577,9 @@ export function ReaderProvider({ children }: { children: ReactNode }) {
         const mimeType = stored.blob.type || PDF_MIME_TYPE;
         const file = new File([stored.blob], stored.fileName, { type: mimeType });
         await touchStoredPdf(documentId);
-        const loadedDocId = await openFileInReader(file, documentId);
+        const loadedDocId = await openFileInReader(file, documentId, {
+          persistToLibrary: false
+        });
         return Boolean(loadedDocId);
       } catch {
         stopSpeech();
@@ -1203,6 +1237,17 @@ export function ReaderProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
+  const setPersistUploadsToLibrary = useCallback((enabled: boolean) => {
+    setState((prev) => (
+      prev.persistUploadsToLibrary === enabled
+        ? prev
+        : {
+            ...prev,
+            persistUploadsToLibrary: enabled
+          }
+    ));
+  }, []);
+
   const value = useMemo(
     () => ({
       ...state,
@@ -1221,6 +1266,7 @@ export function ReaderProvider({ children }: { children: ReactNode }) {
       jumpToBookmark,
       jumpToCheckpoint,
       toggleSidebar,
+      setPersistUploadsToLibrary,
       playTts,
       pauseTts,
       resumeTts,
@@ -1244,6 +1290,7 @@ export function ReaderProvider({ children }: { children: ReactNode }) {
       jumpToCheckpoint,
       loadDocumentById,
       loadFile,
+      setPersistUploadsToLibrary,
       pauseTts,
       playTts,
       renameBookmark,
@@ -1449,6 +1496,7 @@ function readReaderPreferences(): Partial<{
   fontFamily: ReaderFontFamily;
   fontSize: number;
   sidebarCollapsed: boolean;
+  persistUploadsToLibrary: boolean;
   ttsRate: number;
   ttsVoiceURI: string;
   ttsStartMode: TtsStartMode;
@@ -1470,6 +1518,7 @@ function readReaderPreferences(): Partial<{
       fontFamily?: ReaderFontFamily;
       fontSize?: number;
       sidebarCollapsed?: boolean;
+      persistUploadsToLibrary?: boolean;
       ttsRate?: number;
       ttsVoiceURI?: string;
       ttsStartMode?: TtsStartMode;
@@ -1487,6 +1536,10 @@ function readReaderPreferences(): Partial<{
       sidebarCollapsed:
         typeof parsed.sidebarCollapsed === "boolean"
           ? parsed.sidebarCollapsed
+          : undefined,
+      persistUploadsToLibrary:
+        typeof parsed.persistUploadsToLibrary === "boolean"
+          ? parsed.persistUploadsToLibrary
           : undefined,
       ttsRate:
         typeof parsed.ttsRate === "number"
@@ -1511,6 +1564,7 @@ function writeReaderPreferences(preferences: {
   fontFamily: ReaderFontFamily;
   fontSize: number;
   sidebarCollapsed: boolean;
+  persistUploadsToLibrary: boolean;
   ttsRate: number;
   ttsVoiceURI?: string;
   ttsStartMode: TtsStartMode;

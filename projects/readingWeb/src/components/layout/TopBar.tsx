@@ -7,7 +7,15 @@ import { useReader } from "../../context/ReaderContext";
 export function TopBar() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const { loadFile, setTheme, theme, toggleSidebar, sidebarCollapsed } = useReader();
+  const {
+    loadFile,
+    setTheme,
+    theme,
+    toggleSidebar,
+    sidebarCollapsed,
+    persistUploadsToLibrary,
+    setPersistUploadsToLibrary
+  } = useReader();
 
   function handleClickUpload() {
     inputRef.current?.click();
@@ -53,6 +61,15 @@ export function TopBar() {
         </button>
         <button className="secondary-button" type="button" onClick={() => router.push("/library")}>
           Library
+        </button>
+        <button
+          className={`secondary-button ${persistUploadsToLibrary ? "is-active" : ""}`}
+          type="button"
+          onClick={() => setPersistUploadsToLibrary(!persistUploadsToLibrary)}
+          aria-label="Toggle save uploads to local library"
+          title="Control whether uploaded files are saved to this device"
+        >
+          Save: {persistUploadsToLibrary ? "On" : "Off"}
         </button>
         <input
           ref={inputRef}
