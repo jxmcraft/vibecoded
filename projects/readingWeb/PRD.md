@@ -12,7 +12,7 @@ Vision: To create the ultimate web-based reading platform for light novels. Nove
 
 Target Audience:
 
-Primary: Light novel and manga enthusiasts who have their content in PDF format.
+Primary: Light novel and manga enthusiasts who have their content in PDF or EPUB format.
 
 Secondary: Students, researchers, or anyone who reads long-form PDF text documents (e.g., reports, articles) and desires a cleaner, more focused reading experience.
 
@@ -40,7 +40,7 @@ User Feedback: Qualitative feedback on the accuracy of header/footer removal and
 Retention: Number of returning users, correlated with the use of persistence features (bookmarks, saved themes).
 
 3. User Stories
-As a light novel enthusiast, I want to upload a PDF chapter and have the page numbers and chapter titles stripped away so I can read the story without distractions.
+As a light novel enthusiast, I want to upload a PDF or EPUB chapter and have the page numbers and chapter titles stripped away so I can read the story without distractions.
 
 As a user with sensitive eyes, I want to switch to a dark or greyscale scheme so reading at night is more comfortable, and I want the app to remember my choice next time I visit.
 
@@ -57,12 +57,12 @@ As an engaged reader, I want the fast reader to slow down during a climactic sce
 4. Functional Requirements
 This section details what the product must do.
 
-FR-01: PDF Upload & Processing
-Description: The user can upload a PDF file from their local machine.
+FR-01: Document Upload & Processing
+Description: The user can upload a supported reading file from their local machine.
 
 Requirements:
 
-Support standard PDF file formats.
+Support standard PDF and EPUB file formats.
 
 Provide clear upload progress indicator.
 
@@ -71,7 +71,7 @@ Handle file errors gracefully (e.g., corrupted files, too large).
 Processing should be done client-side for privacy.
 
 FR-02: Intelligent Content Cleansing & Reflow (Core Feature)
-Description: The system must analyze the PDF, differentiate between the main body text and repetitive elements, and reflow the content into a single, continuous column.
+Description: The system must analyze the source document, differentiate between the main body text and repetitive elements, and reflow the content into a single, continuous column.
 
 Requirements:
 
@@ -181,7 +181,7 @@ Reading Progress Slider: Provide a lightweight progress control that shows how m
 All bookmarks and progress data must be stored locally in the user's browser.
 
 5. Non-Functional Requirements
-Performance: PDF processing and the initial cleanse should happen reasonably quickly (ideally under 10 seconds for a standard 300-page novel) using client-side resources. The user interface must remain responsive during this process.
+Performance: Document processing and the initial cleanse should happen reasonably quickly (ideally under 10 seconds for a standard 300-page novel) using client-side resources. The user interface must remain responsive during this process.
 
 Usability: The interface should be intuitive, with clearly labeled buttons and minimal clutter. The "Slow Down" mechanism for Fast Reader must be easily discoverable and usable.
 
@@ -196,13 +196,13 @@ The layout should be clean and focused on the text.
 
 Top Bar (App Bar):
 
-Left: Logo (NovelFlow) and "Upload PDF" button.
+Left: Logo (NovelFlow) and "Upload File" button.
 
 Right: Theme selector icons (Sun, Moon, a "B/W" icon for greyscale).
 
 Main Content Area:
 
-Initial State: Large central area with a "Drag & Drop PDF here or Click to Upload" message.
+Initial State: Large central area with a "Drag & Drop file here or Click to Upload" message.
 
 Reading State: A continuous, scrollable column of clean text and images. Font should be clear and size-adjustable.
 
@@ -231,42 +231,54 @@ AI-Powered Pacing: Automatically detect scene intensity based on text analysis t
 
 Fine-Grained Reading Timeline: Add an always-available progress timeline or slider that reflects current reading position, saved progress, and quick navigation points through a long chapter or volume.
 
-8. Implementation Status Snapshot (15 Mar, 2026)
+8. Implementation Status Snapshot (16 Mar, 2026)
 Legend: Implemented | Partial | Not Implemented
 
-FR-01 PDF Upload & Processing: Partial
-- Implemented: PDF upload, file type checks, client-side parsing pipeline, error state handling.
-- Partial/Missing: explicit upload progress indicator and richer file-size/corruption messages.
+FR-01 Document Upload & Processing: Implemented
+- Implemented: PDF and EPUB upload support, file type checks, client-side parsing pipeline, phased loading UX messaging, numeric extraction progress indicators, and normalized/friendlier error handling with richer failure categories.
 
 FR-02 Cleansing & Reflow: Partial
-- Implemented: repeated furniture detection/removal, column-aware reflow, paragraph/heading rendering, chapter checkpoint extraction.
-- Partial/Missing: known blockers remain for some PDFs (drop-cap split, surviving page numbers, space-only indentation flattening, mixed-font grouping edge cases).
+- Implemented: repeated furniture detection/removal, column-aware reflow, paragraph/heading rendering, chapter checkpoint extraction, Smart/Exact mode UX, and parse-result caching.
+- Implemented: EPUB chapter parsing based on semantic HTML headings/paragraphs with inline image extraction.
+- Partial/Missing: known blockers remain for some PDFs (drop-cap split in edge layouts, surviving page numbers, space-only indentation flattening, mixed-font grouping edge cases).
 
 FR-03 Image Detection & Preservation: Implemented
-- Extracted page images are preserved and rendered inline in reflowed reading order.
+- Extracted page images are preserved and rendered inline in reflowed reading order for both PDF and EPUB.
 
 FR-04 Theme Switching & Persistence: Implemented
 - Light/Dark/Greyscale modes with persistent local preference storage.
 
-FR-05 Auto-Reader (Text-to-Speech): Not Implemented
+FR-05 Auto-Reader (Text-to-Speech): Partial
+- Implemented: Web Speech playback (play/pause/stop), speed control, voice selection, sentence highlighting, and improved resume behavior using sentence/word boundary tracking.
+- Implemented: defensive word-boundary fallback for browsers with sparse boundary events.
+- Implemented: bottom control-surface now exposes stop and inline speed controls in addition to play/pause.
+- Partial/Missing: additional cross-browser and edge-case UX polish.
 
-FR-06 Fast Reader (RSVP) with Pacing Control: Not Implemented
+FR-06 Fast Reader (RSVP) with Pacing Control: Implemented
+- Implemented: single-word RSVP playback, adjustable WPM, play/pause flow, sentence-end pause control, ETA/progress UI, and position sync back to standard reader on close/finish.
+- Implemented: default paused-on-open behavior and keyboard controls (space/escape) for primary interactions.
+- Implemented: image-aware RSVP pause/resume behavior with centered image display in-flow.
+- Implemented: hold-to-slow-down intensity pacing (Shift-hold reduces speed temporarily; release restores baseline).
 
-FR-07 Bookmarks & Progress Persistence: Partial
+FR-07 Bookmarks & Progress Persistence: Implemented
 - Implemented: auto progress save, manual bookmarks, bookmark list/jump/delete, reading progress slider.
-- Partial/Missing: resume confirmation prompt is not yet implemented.
+- Implemented: resume confirmation prompt with resume/start-over actions, plus persistent resume CTA placement in fixed bottom controls.
+- Implemented: manual bookmark rename capability for named bookmarks.
 
 Non-Functional Snapshot
 - Privacy (client-side only): Implemented.
-- Performance KPI (<10 seconds for 300 pages): Not yet benchmark-validated.
+- Performance KPI (<10 seconds for 300 pages equivalent): Not yet benchmark-validated.
+
+Low-Priority TODOs
+- Smart mode currently has a known regression after recent TTS resume changes; keep Exact mode as fallback while this is investigated.
 
 9. Approved Enhancement: Home Library (MVP)
-Goal: Add a dedicated library home page where uploaded PDFs are saved locally and displayed with title + cover image.
+Goal: Add a dedicated library home page where uploaded files are saved locally and displayed with title + cover image when available.
 
 Scope
 - Add `/library` as the default home route.
-- Persist uploaded PDFs in browser IndexedDB (blob + metadata).
-- Show library cards with PDF file name and generated first-page cover thumbnail.
+- Persist uploaded documents in browser IndexedDB (blob + metadata).
+- Show library cards with file name and generated first-page cover thumbnail when available.
 - Allow opening a saved document into `/reader/[docId]`.
 - Allow deleting saved documents from the local library.
 
@@ -277,7 +289,7 @@ Data Model (Local)
 - `uploadedAt`: timestamp
 - `lastOpenedAt`: timestamp
 - `thumbnailDataUrl`: first-page thumbnail data URL
-- `blob`: original PDF binary
+- `blob`: original file binary
 
 Storage/Privacy Constraints
 - All storage remains local to the browser/device.

@@ -1,4 +1,3 @@
-import { v4 as uuid } from "uuid";
 import type {
   CleansedBlock,
   CleansedDocument,
@@ -63,6 +62,34 @@ type AdaptiveChoice = {
     tolerant: number;
   };
 };
+
+// Use the built-in Web Crypto API instead of the uuid npm package.
+function newId(): string {
+  return crypto.randomUUID();
+}
+
+// Module-level regex constants — compiled once, reused in hot paths.
+const RE_NULL = /\u0000/g;
+const RE_SPACE_ONLY = /^\s+$/;
+const RE_TRAILING_SPACE = /\s$/;
+const RE_TRAILING_HYPHEN = /[-\u2010\u2011\u2012\u2013\u2014]$/;
+const RE_TRAILING_OPEN_QUOTE = /[""(\[]$/;
+const RE_LEADING_PUNCT = /^[,.;:!?%'"")\]]/;
+const RE_TRAILING_LOWER_DIGIT = /[a-z\d]$/;
+const RE_LEADING_UPPER = /^[A-Z]/;
+const RE_TRAILING_COMMA_COLON = /[,;:]$/;
+const RE_LEADING_ALNUM = /^[A-Za-z\d]/;
+const RE_MULTI_SPACE = /\s+/g;
+const RE_LEADING_PUNCT_APPEND = /^[,.;:!?%'"")\]]/;
+const RE_CHAPTER = /^chapter\b/i;
+const RE_PAGE_NUMBER = /\bpage\s+\d+\b/i;
+const RE_SINGLE_NONSPACE = /^\S$/;
+const RE_WORD_SPACE_SPLIT = /\b[A-Za-z]\s+[A-Za-z]{4,}/;
+const RE_IMMUNE_I_A = /\b(I|A)\s+[a-z]/;
+const RE_LOWERCASE_START = /^[a-z]/;
+const RE_NUMERIC_SECTION_MERGE = /^\d+[.:]\d*[A-Za-z]/;
+const RE_MERGED_DROPCAP_OPEN = /^[A-HJ-Z][a-z]{2,7}\s+[a-z]/;
+const RE_ORPHANED_CAP_OPEN = /^[A-HJ-Z]\s+[“"']?[A-Z]?[a-z]/;
 
 const STRATEGY_CONFIGS: Record<ParseStrategy, StrategyConfig> = {
   strict: {
@@ -240,10 +267,10 @@ function assembleLineText(blocks: TextBlock[]) {
   let previous: TextBlock | undefined;
 
   for (const block of blocks) {
-    const rawText = block.text.replace(/\u0000/g, "");
+    const rawText = block.text.replace(RE_NULL, "");
     if (!rawText) continue;
 
-    if (/^\s+$/.test(rawText)) {
+    if (RE_SPACE_ONLY.test(rawText)) {
       if (result && !result.endsWith(" ")) {
         result += " ";
       }
@@ -263,23 +290,25 @@ function assembleLineText(blocks: TextBlock[]) {
       continue;
     }
 
-    const previousChars = Math.max(1, (previous?.text ?? "").replace(/\s+/g, "").length);
+    const previousChars = Math.max(1, (previous?.text ?? "").replace(RE_MULTI_SPACE, "").length);
     const previousWidth = previous?.width ?? 0;
     const previousEnd = (previous?.x ?? 0) + previousWidth;
     const gap = block.x - previousEnd;
     const estimatedCharWidth = Math.max(1, previousWidth / previousChars);
     const needsSpaceByGap = gap > estimatedCharWidth * 0.28;
-    const previousEndsSpace = /\s$/.test(result);
-    const previousEndsHyphen = /[-\u2010\u2011\u2012\u2013\u2014]$/.test(result);
-    const previousEndsOpenQuote = /[“"(\[]$/.test(result);
-    const nextStartsPunctuation = /^[,.;:!?%'"”)\]]/.test(segment);
+    const previousEndsSpace = RE_TRAILING_SPACE.test(result);
+    const previousEndsHyphen = RE_TRAILING_HYPHEN.test(result);
+    const previousEndsOpenQuote = RE_TRAILING_OPEN_QUOTE.test(result);
+    const nextStartsPunctuation = RE_LEADING_PUNCT.test(segment);
+    const lowerToUpperBoundary = RE_TRAILING_LOWER_DIGIT.test(result) && RE_LEADING_UPPER.test(segment);
+    const punctuationToWordBoundary = RE_TRAILING_COMMA_COLON.test(result) && RE_LEADING_ALNUM.test(segment);
 
     if (
       !previousEndsSpace &&
       !previousEndsHyphen &&
       !previousEndsOpenQuote &&
       !nextStartsPunctuation &&
-      needsSpaceByGap
+      (needsSpaceByGap || lowerToUpperBoundary || punctuationToWordBoundary)
     ) {
       result += " ";
     }
@@ -288,7 +317,7 @@ function assembleLineText(blocks: TextBlock[]) {
     previous = block;
   }
 
-  return result.replace(/\s+/g, " ").trim();
+  return result.replace(RE_MULTI_SPACE, " ").trim();
 }
 
 function appendParagraphLine(current: string, lineText: string) {
@@ -298,10 +327,154 @@ function appendParagraphLine(current: string, lineText: string) {
   if (current.endsWith("-")) {
     return `${current.slice(0, -1)}${next}`;
   }
-  if (/^[,.;:!?%'"”)\]]/.test(next)) {
+  if (RE_LEADING_PUNCT_APPEND.test(next)) {
     return `${current}${next}`;
   }
   return `${current} ${next}`;
+}
+
+// Lightweight stream join for conservative mode: keep PDF text item order
+// and only add spaces where plain token boundaries require them.
+function appendStreamFragment(current: string, fragmentText: string) {
+  const fragment = fragmentText.replace(RE_NULL, "");
+  if (!fragment) {
+    return current;
+  }
+
+  if (RE_SPACE_ONLY.test(fragment)) {
+    if (!current || RE_TRAILING_SPACE.test(current)) {
+      return current;
+    }
+    return `${current} `;
+  }
+
+  const next = fragment.trim();
+  if (!next) {
+    return current;
+  }
+  if (!current) {
+    return next;
+  }
+  if (current.endsWith("-")) {
+    return `${current.slice(0, -1)}${next}`;
+  }
+  if (
+    RE_LEADING_PUNCT_APPEND.test(next) ||
+    RE_TRAILING_SPACE.test(current) ||
+    RE_TRAILING_OPEN_QUOTE.test(current)
+  ) {
+    return `${current}${next}`;
+  }
+
+  return `${current} ${next}`;
+}
+
+type StreamParagraph = {
+  text: string;
+  firstX: number; // X of the first block in the paragraph's first line (for indent detection)
+  leadingSpaceCount: number;
+};
+
+function buildDirectPageText(pageBlocks: TextBlock[]): StreamParagraph[] {
+  if (!pageBlocks.length) {
+    return [];
+  }
+
+  type StreamLine = {
+    text: string;
+    baseline: number;
+    avgHeight: number;
+    firstX: number;
+  };
+
+  const lines: StreamLine[] = [];
+  let currentLine: StreamLine | undefined;
+  let previousBlock: TextBlock | undefined;
+
+  const flushLine = () => {
+    if (!currentLine) {
+      return;
+    }
+    const text = currentLine.text.trim();
+    if (text) {
+      lines.push({ ...currentLine, text });
+    }
+    currentLine = undefined;
+  };
+
+  for (const block of pageBlocks) {
+    const raw = block.text.replace(RE_NULL, "");
+    if (!raw) {
+      continue;
+    }
+
+    const baseline = baselineForBlock(block);
+    const height = Math.max(block.height, 1);
+    const yShift = previousBlock
+      ? Math.abs(block.y - previousBlock.y)
+      : 0;
+    const previousHeight = previousBlock ? Math.max(previousBlock.height, 1) : height;
+    const startsNewLine =
+      !currentLine ||
+      yShift > Math.max(height, previousHeight) * 0.55;
+
+    if (startsNewLine) {
+      flushLine();
+      currentLine = {
+        text: appendStreamFragment("", raw),
+        baseline,
+        avgHeight: height,
+        firstX: block.x
+      };
+    } else {
+      if (!currentLine) {
+        continue;
+      }
+      currentLine.text = appendStreamFragment(currentLine.text, raw);
+      currentLine.baseline = (currentLine.baseline + baseline) / 2;
+      currentLine.avgHeight = (currentLine.avgHeight + height) / 2;
+    }
+
+    previousBlock = block;
+  }
+
+  flushLine();
+
+  if (!lines.length) {
+    return [];
+  }
+
+  // Group lines into paragraphs by detecting large baseline gaps.
+  const paragraphs: StreamParagraph[] = [];
+  let paraText = lines[0].text;
+  let paraFirstX = lines[0].firstX;
+
+  for (let index = 1; index < lines.length; index += 1) {
+    const previous = lines[index - 1];
+    const current = lines[index];
+    const gap = Math.abs(previous.baseline - current.baseline);
+    const paragraphBreak = gap > Math.max(previous.avgHeight, current.avgHeight) * 1.8;
+
+    if (paragraphBreak) {
+      const leadingSpaceCount = (paraText.match(/^\s*/) ?? [""])[0].length;
+      const cleanText = paraText.replace(RE_MULTI_SPACE, " ").trim();
+      if (cleanText) {
+        paragraphs.push({ text: cleanText, firstX: paraFirstX, leadingSpaceCount });
+      }
+      paraText = current.text;
+      paraFirstX = current.firstX;
+    } else {
+      paraText += ` ${current.text}`;
+    }
+  }
+
+  const lastLeadingSpaceCount = (paraText.match(/^\s*/) ?? [""])[0].length;
+  const lastClean = paraText.replace(RE_MULTI_SPACE, " ").trim();
+  if (lastClean) {
+    paragraphs.push({ text: lastClean, firstX: paraFirstX, leadingSpaceCount: lastLeadingSpaceCount });
+  }
+
+  return paragraphs;
 }
 
 function minHeadingLevel(current: 1 | 2 | 3, next: 1 | 2 | 3): 1 | 2 | 3 {
@@ -311,7 +484,7 @@ function minHeadingLevel(current: 1 | 2 | 3, next: 1 | 2 | 3): 1 | 2 | 3 {
 }
 
 function headingLevelFor(line: LineGroup, profile: DocumentProfile): 1 | 2 | 3 {
-  if (/^chapter\b/i.test(line.text) || line.avgHeight >= profile.bodyHeight * 1.28) {
+  if (RE_CHAPTER.test(line.text) || line.avgHeight >= profile.bodyHeight * 1.28) {
     return 1;
   }
   if (line.avgHeight >= profile.bodyHeight * 1.14) {
@@ -328,17 +501,27 @@ function shouldJoinLine(
 ) {
   const blockBaseline = baselineForBlock(block);
   const referenceHeight = Math.max(line.avgHeight, block.height, profile.bodyHeight);
+  const lineWidth = Math.max(0, line.right - line.left);
+
+  // If x jumps far back toward the left while we already have a wide line,
+  // this is usually the next visual line (e.g., a leading "I") and must not join.
+  const horizontalBacktrack =
+    line.blocks.length > 0 &&
+    lineWidth > profile.averageLineWidth * 0.34 &&
+    block.x <
+      line.right - Math.max(referenceHeight * 1.15, Math.min(lineWidth * 0.24, profile.averageLineWidth * 0.5));
+
+  if (horizontalBacktrack) {
+    return false;
+  }
+
   const baselineTolerance = referenceHeight * config.baselineToleranceMultiplier;
   const baselineClose = Math.abs(blockBaseline - line.baseline) <= baselineTolerance;
 
   const centerTolerance = referenceHeight * config.centerToleranceMultiplier;
   const centerClose = Math.abs(centerYForBlock(block) - line.centerY) <= centerTolerance;
 
-  const shortLead = block.text.trim().length <= 2 || line.blocks[0]?.text.trim().length <= 2;
-  const shortLeadTolerance = referenceHeight * config.shortLeadToleranceMultiplier;
-  const shortLeadClose = Math.abs(blockBaseline - line.baseline) <= shortLeadTolerance;
-
-  return baselineClose || centerClose || (shortLead && shortLeadClose);
+  return baselineClose || centerClose;
 }
 
 function buildLinesForPage(
@@ -366,7 +549,7 @@ function buildLinesForPage(
 
   for (const block of sortedBlocks) {
     const text = block.text.trim();
-    if (!text && !/^\s+$/.test(block.text)) {
+    if (!text && !RE_SPACE_ONLY.test(block.text)) {
       continue;
     }
 
@@ -475,25 +658,38 @@ function isHeadingLine(
 function scoreOutput(blocks: CleansedBlock[]) {
   let score = 0;
   let previousWasHeading = false;
+  let previousKind: CleansedBlock["kind"] | undefined;
 
   for (const block of blocks) {
     if (block.kind === "paragraph") {
-      if (/\bpage\s+\d+\b/i.test(block.text)) {
+      const startsAfterBoundary = previousKind === "heading" || previousKind === "page-marker";
+      const sample = block.text.slice(0, 140);
+      if (RE_PAGE_NUMBER.test(block.text)) {
         score += 20;
       }
-      if (/^\S$/.test(block.text)) {
+      if (RE_SINGLE_NONSPACE.test(block.text)) {
         score += 24;
       }
       if (block.text.length < 18) {
         score += 5;
       }
-      if (/\b[A-Za-z]\s+[A-Za-z]{4,}/.test(block.text) && !/\b(I|A)\s+[a-z]/.test(block.text)) {
+      if (RE_WORD_SPACE_SPLIT.test(block.text) && !RE_IMMUNE_I_A.test(block.text)) {
         score += 4;
       }
-      if (previousWasHeading && /^[a-z]/.test(block.text)) {
+      if (previousWasHeading && RE_LOWERCASE_START.test(block.text)) {
         score += 3;
       }
+      if (RE_NUMERIC_SECTION_MERGE.test(sample)) {
+        score += 8;
+      }
+      if (startsAfterBoundary && RE_ORPHANED_CAP_OPEN.test(sample)) {
+        score += 10;
+      }
+      if (startsAfterBoundary && RE_MERGED_DROPCAP_OPEN.test(sample)) {
+        score += 8;
+      }
       previousWasHeading = false;
+      previousKind = block.kind;
       continue;
     }
 
@@ -502,16 +698,19 @@ function scoreOutput(blocks: CleansedBlock[]) {
         score += 10;
       }
       previousWasHeading = true;
+      previousKind = block.kind;
       continue;
     }
 
     if (block.kind === "page-marker") {
       score += 0.2;
       previousWasHeading = false;
+      previousKind = block.kind;
       continue;
     }
 
     previousWasHeading = false;
+    previousKind = block.kind;
   }
 
   return score;
@@ -544,7 +743,7 @@ function parseWithStrategy(
       if (pageLabels.has(pageIndex)) {
         output.push({
           kind: "page-marker",
-          id: uuid(),
+          id: newId(),
           pageIndex,
           label: pageLabels.get(pageIndex) as string
         });
@@ -573,7 +772,7 @@ function parseWithStrategy(
     let previousBodyLine: LineGroup | undefined;
 
     const flushParagraph = () => {
-      const text = paragraphText.trim();
+      const text = repairDisplacedLeadingCap(paragraphText.trim());
       if (!text) {
         paragraphText = "";
         paragraphIndentLevel = 0;
@@ -581,7 +780,7 @@ function parseWithStrategy(
       }
       output.push({
         kind: "paragraph",
-        id: uuid(),
+        id: newId(),
         text,
         pageIndex,
         indentLevel: paragraphIndentLevel
@@ -616,7 +815,7 @@ function parseWithStrategy(
 
         output.push({
           kind: "heading",
-          id: uuid(),
+          id: newId(),
           text: headingLines.join("\n"),
           pageIndex,
           level: headingLevel,
@@ -655,7 +854,7 @@ function parseWithStrategy(
     if (pageLabels.has(pageIndex)) {
       output.push({
         kind: "page-marker",
-        id: uuid(),
+        id: newId(),
         pageIndex,
         label: pageLabels.get(pageIndex) as string
       });
@@ -694,7 +893,7 @@ function parseFallback(
       if (pageLabels.has(pageIndex)) {
         output.push({
           kind: "page-marker",
-          id: uuid(),
+          id: newId(),
           pageIndex,
           label: pageLabels.get(pageIndex) as string
         });
@@ -702,59 +901,33 @@ function parseFallback(
       continue;
     }
 
-    const lines = buildLinesForPage(pageIndex, pageBlocks, STRATEGY_CONFIGS.strict, profile);
-    const bodyLeft = quantile(lines.map((line) => line.left), 0.18) || profile.bodyLeft;
-    let paragraphText = "";
-    let paragraphIndentLevel = 0;
-    let previousLine: LineGroup | undefined;
+    const paragraphs = buildDirectPageText(pageBlocks);
+    if (paragraphs.length) {
+      const pageMinX = bounds.minX;
+      const bodyHeight = Math.max(profile.bodyHeight, 1);
 
-    const flushParagraph = () => {
-      const text = paragraphText.trim();
-      if (!text) {
-        paragraphText = "";
-        paragraphIndentLevel = 0;
-        return;
+      for (const para of paragraphs) {
+        const indentOffset = Math.max(0, para.firstX - pageMinX);
+        const geometryIndentLevel =
+          indentOffset >= bodyHeight * 0.5
+            ? Math.min(3, Math.round(indentOffset / bodyHeight))
+            : 0;
+        const spaceIndentLevel = Math.min(3, Math.floor(para.leadingSpaceCount / 3));
+        const indentLevel = Math.max(geometryIndentLevel, spaceIndentLevel);
+        output.push({
+          kind: "paragraph",
+          id: newId(),
+          text: para.text,
+          pageIndex,
+          indentLevel
+        });
       }
-      output.push({
-        kind: "paragraph",
-        id: uuid(),
-        text,
-        pageIndex,
-        indentLevel: paragraphIndentLevel
-      });
-      paragraphText = "";
-      paragraphIndentLevel = 0;
-    };
-
-    for (const line of lines) {
-      const baselineGap = previousLine
-        ? previousLine.baseline - line.baseline
-        : profile.lineGap * 2;
-      const lineIndentRaw = Math.max(0, line.left - bodyLeft);
-      const lineIndentLevel =
-        lineIndentRaw >= profile.bodyHeight * 1.2
-          ? Math.min(3, Math.round(lineIndentRaw / Math.max(profile.bodyHeight, 1)))
-          : 0;
-      const startsNewParagraph =
-        !paragraphText ||
-        baselineGap > Math.max(profile.lineGap * 1.9, profile.bodyHeight * 1.65) ||
-        (lineIndentLevel > 0 && paragraphText.length > 0 && paragraphIndentLevel === 0);
-
-      if (startsNewParagraph) {
-        flushParagraph();
-        paragraphIndentLevel = lineIndentLevel;
-      }
-
-      paragraphText = appendParagraphLine(paragraphText, line.text);
-      previousLine = line;
     }
-
-    flushParagraph();
 
     if (pageLabels.has(pageIndex)) {
       output.push({
         kind: "page-marker",
-        id: uuid(),
+        id: newId(),
         pageIndex,
         label: pageLabels.get(pageIndex) as string
       });
@@ -763,7 +936,8 @@ function parseFallback(
 
   return {
     blocks: output,
-    score: scoreOutput(output) + 6
+    // Favor conservative mode when adaptive has chapter-start corruption.
+    score: scoreOutput(output) + 4
   };
 }
 
@@ -796,6 +970,42 @@ function resolveConfidence(adaptiveScore: number, fallbackScore: number): Parser
     return "medium";
   }
   return "low";
+}
+
+function hasDisplacedCapArtifacts(blocks: CleansedBlock[]) {
+  let previousKind: CleansedBlock["kind"] | undefined;
+
+  for (const block of blocks) {
+    if (block.kind === "paragraph") {
+      const sample = block.text.slice(0, 140);
+      const startsAfterBoundary = previousKind === "heading" || previousKind === "page-marker";
+      const lowerLeadWithDisplacedCap =
+        /^[a-z]/.test(sample) && /\b([A-HJ-Z])\s+(?=[a-z])/.test(sample);
+      const swappedLeadingCap =
+        /^[A-Z][a-z]{2,}/.test(sample) && /\b([A-HJ-Z])\s+(?=[A-Z][a-z])/.test(sample);
+      const orphanedSingleCapWithSpace =
+        startsAfterBoundary && /^[A-HJ-Z]\s+[“"']?[A-Z]?[a-z]/.test(sample);
+      // Drop-cap glued directly onto a word: "Aknow", "Ohere", "Adisliked"
+      const dropCapMergedNoSpace =
+        startsAfterBoundary && /^[A-HJ-Z][a-z]{2,7}\s+[a-z]/.test(sample);
+      // Section number merged with text: "6.1or", "2.3students"
+      const numericSectionMerge = /^\d+[.:]\d*[A-Za-z]/.test(sample);
+
+      if (
+        lowerLeadWithDisplacedCap ||
+        swappedLeadingCap ||
+        orphanedSingleCapWithSpace ||
+        dropCapMergedNoSpace ||
+        numericSectionMerge
+      ) {
+        return true;
+      }
+    }
+
+    previousKind = block.kind;
+  }
+
+  return false;
 }
 
 function confidenceSummary(
@@ -915,8 +1125,11 @@ export function cleanseDocument(blocks: TextBlock[]): CleansedDocument {
     profile
   );
   const confidence = resolveConfidence(adaptiveChoice.result.score, fallbackResult.score);
+  const adaptiveHasArtifacts = hasDisplacedCapArtifacts(adaptiveChoice.result.blocks);
+  const fallbackHasArtifacts = hasDisplacedCapArtifacts(fallbackResult.blocks);
   const defaultMode =
-    confidence === "low" && fallbackResult.score + 2 < adaptiveChoice.result.score
+    (!fallbackHasArtifacts && adaptiveHasArtifacts) ||
+    (confidence === "low" && fallbackResult.score + 2 < adaptiveChoice.result.score)
       ? "fallback"
       : "adaptive";
 
@@ -939,4 +1152,71 @@ export function cleanseDocument(blocks: TextBlock[]): CleansedDocument {
 
 export function cleanseBlocks(blocks: TextBlock[]): CleansedBlock[] {
   return cleanseDocument(blocks).modes.adaptive;
+}
+
+function repairDisplacedLeadingCap(text: string) {
+  if (!text) {
+    return text;
+  }
+
+  // Case 0: section marker glued to word (e.g., "6.1or" -> "6.1 or").
+  if (RE_NUMERIC_SECTION_MERGE.test(text)) {
+    return text.replace(/^(\d+[.:]\d*)([A-Za-z])/, "$1 $2");
+  }
+
+  // Case 1: leading lowercase fragment (e.g., "pril", "ven", or "n our") with displaced cap.
+  if (/^[a-z]/.test(text)) {
+    const leadingWordMatch = text.match(/^([a-z][a-z'\-]{0,14})\b/);
+    if (!leadingWordMatch) {
+      return text;
+    }
+
+    // Exclude "I" here because treating it as a dropped-cap causes false positives.
+    const lowerCandidates = Array.from(text.matchAll(/\b([A-HJ-Z])\s+(?=[a-z])/g));
+    const lowerMatch = lowerCandidates.find((entry) => entry.index !== undefined);
+    if (!lowerMatch || lowerMatch.index === undefined) {
+      return text;
+    }
+
+    const letter = lowerMatch[1];
+    const start = lowerMatch.index;
+    const end = start + lowerMatch[0].length;
+    const withoutDisplacedLetter = `${text.slice(0, start)}${text.slice(end)}`
+      .replace(/\s{2,}/g, " ")
+      .trim();
+
+    if (!withoutDisplacedLetter) {
+      return text;
+    }
+
+    return `${letter}${withoutDisplacedLetter}`;
+  }
+
+  // Case 2: corrupted leading capital (e.g., "Ohere ... T After" -> "There ... After").
+  if (/^[A-Z][a-z]{2,}/.test(text)) {
+    const lead = text[0];
+    const upperCandidates = Array.from(text.matchAll(/\b([A-HJ-Z])\s+(?=[A-Z][a-z])/g));
+    const upperMatch = upperCandidates.find(
+      (entry) => entry.index !== undefined && entry[1] !== lead
+    );
+
+    if (!upperMatch || upperMatch.index === undefined) {
+      return text;
+    }
+
+    const replacementCap = upperMatch[1];
+    const start = upperMatch.index;
+    const end = start + upperMatch[0].length;
+    const withoutDisplacedLetter = `${text.slice(0, start)}${text.slice(end)}`
+      .replace(/\s{2,}/g, " ")
+      .trim();
+
+    if (!withoutDisplacedLetter) {
+      return text;
+    }
+
+    return `${replacementCap}${withoutDisplacedLetter.slice(1)}`;
+  }
+
+  return text;
 }

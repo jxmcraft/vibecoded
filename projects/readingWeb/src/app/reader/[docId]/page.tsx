@@ -8,7 +8,7 @@ import { useReader } from "@/context/ReaderContext";
 export default function ReaderDocumentPage() {
   const params = useParams<{ docId: string }>();
   const router = useRouter();
-  const { loadDocumentById } = useReader();
+  const { loadDocumentById, stopTts } = useReader();
 
   const docId = useMemo(() => {
     const value = params?.docId;
@@ -26,7 +26,11 @@ export default function ReaderDocumentPage() {
         router.replace("/library");
       }
     });
-  }, [docId, loadDocumentById, router]);
+
+    return () => {
+      stopTts();
+    };
+  }, [docId, loadDocumentById, router, stopTts]);
 
   return <AppShell />;
 }

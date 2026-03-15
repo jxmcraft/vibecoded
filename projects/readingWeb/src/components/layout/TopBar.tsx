@@ -19,11 +19,11 @@ export function TopBar() {
     if (!file) return;
 
     try {
-      if (
-        file.type !== "application/pdf" &&
-        !file.name.toLowerCase().endsWith(".pdf")
-      ) {
-        alert("Please select a PDF file.");
+      const lowerName = file.name.toLowerCase();
+      const isPdf = file.type === "application/pdf" || lowerName.endsWith(".pdf");
+      const isEpub = file.type === "application/epub+zip" || lowerName.endsWith(".epub");
+      if (!isPdf && !isEpub) {
+        alert("Please select a PDF or EPUB file.");
         return;
       }
 
@@ -49,7 +49,7 @@ export function TopBar() {
         </button>
         <span className="logo">NovelFlow</span>
         <button className="primary-button" type="button" onClick={handleClickUpload}>
-          Upload PDF
+          Upload File
         </button>
         <button className="secondary-button" type="button" onClick={() => router.push("/library")}>
           Library
@@ -57,7 +57,7 @@ export function TopBar() {
         <input
           ref={inputRef}
           type="file"
-          accept="application/pdf"
+          accept="application/pdf,application/epub+zip,.pdf,.epub"
           style={{ display: "none" }}
           onChange={handleFileChange}
         />

@@ -12,8 +12,9 @@ export default function LibraryPage() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const { entries, loading, deleteEntry, refreshLibrary, storage } = useLibrary();
-  const { loadFile, setTheme, theme } = useReader();
+  const { loadFile, setTheme, theme, loadingPhase, loadingProgress, error: readerError } = useReader();
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | undefined>();
   const [query, setQuery] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("recent");
 
@@ -35,9 +36,12 @@ export default function LibraryPage() {
 
     try {
       setUploading(true);
+      setUploadError(undefined);
       const docId = await loadFile(file);
       if (docId) {
         router.push(`/reader/${encodeURIComponent(docId)}`);
+      } else {
+        setUploadError(readerError ?? "Unable to open this file. Please try another file.");
       }
     } finally {
       setUploading(false);
@@ -50,7 +54,7 @@ export default function LibraryPage() {
   }
 
   async function handleDelete(docId: string) {
-    const confirmed = window.confirm("Delete this PDF from your local library?");
+    const confirmed = window.confirm("Delete this document from your local library?");
     if (!confirmed) {
       return;
     }
@@ -93,7 +97,7 @@ export default function LibraryPage() {
         <div>
           <p className="library-kicker">NovelFlow</p>
           <h1>Library</h1>
-          <p>Saved PDFs stay on this device only.</p>
+          <p>Saved files stay on this device only.</p>
         </div>
         <div className="library-actions">
           <button
@@ -102,12 +106,12 @@ export default function LibraryPage() {
             onClick={handleUploadClick}
             disabled={uploading}
           >
-            {uploading ? "Preparing..." : "Upload PDF"}
+            {uploading ? "Preparing..." : "Upload File"}
           </button>
           <input
             ref={inputRef}
             type="file"
-            accept="application/pdf"
+            accept="application/pdf,application/epub+zip,.pdf,.epub"
             style={{ display: "none" }}
             onChange={handleFileChange}
           />
@@ -142,7 +146,16 @@ export default function LibraryPage() {
 
       {uploading && (
         <section className="library-upload-status" aria-live="polite">
-          <span>Opening PDF reader...</span>
+          <span>
+            {getLibraryUploadPhaseMessage(loadingPhase)}
+            {typeof loadingProgress === "number" ? ` (${loadingProgress}%)` : ""}
+          </span>
+        </section>
+      )}
+
+      {uploadError && (
+        <section className="library-upload-status is-error" aria-live="polite">
+          <span>{uploadError}</span>
         </section>
       )}
 
@@ -173,7 +186,7 @@ export default function LibraryPage() {
             ? `Using ${(storage.usedBytes / (1024 * 1024)).toFixed(1)} MB of ${(storage.quotaBytes / (1024 * 1024)).toFixed(1)} MB`
             : "Storage estimate unavailable"}
         </span>
-        {quotaHigh && <strong>Storage is getting full. Consider deleting older PDFs.</strong>}
+        {quotaHigh && <strong>Storage is getting full. Consider deleting older files.</strong>}
       </section>
 
       {loading ? (
@@ -185,4 +198,26 @@ export default function LibraryPage() {
       )}
     </main>
   );
+}
+
+function getLibraryUploadPhaseMessage(phase: string | undefined) {
+  if (phase === "loading-document") {
+    return "Loading file…";
+  }
+  if (phase === "using-cache") {
+    return "Using cached parse…";
+  }
+  if (phase === "reading-text") {
+    return "Extracting text…";
+  }
+  if (phase === "cleansing") {
+    return "Cleansing and reflowing…";
+  }
+  if (phase === "extracting-images") {
+    return "Extracting images…";
+  }
+  if (phase === "saving-library") {
+    return "Saving to local library…";
+  }
+  return "Opening reader…";
 }

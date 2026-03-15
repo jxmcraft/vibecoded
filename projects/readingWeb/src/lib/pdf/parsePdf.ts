@@ -66,11 +66,15 @@ export async function loadPdfFromFile(file: File): Promise<any> {
 }
 
 export async function extractTextBlocks(
-  pdf: any
+  pdf: any,
+  options?: {
+    onProgress?: (progress: { pageIndex: number; pageCount: number; percent: number }) => void;
+  }
 ): Promise<TextBlock[]> {
   const blocks: TextBlock[] = [];
 
   const pageCount = pdf.numPages;
+  options?.onProgress?.({ pageIndex: 0, pageCount, percent: 0 });
   for (let pageIndex = 1; pageIndex <= pageCount; pageIndex += 1) {
     const page = await pdf.getPage(pageIndex);
     const textContent = await page.getTextContent();
@@ -97,6 +101,12 @@ export async function extractTextBlocks(
             : undefined
       });
     }
+
+    options?.onProgress?.({
+      pageIndex,
+      pageCount,
+      percent: Math.round((pageIndex / Math.max(1, pageCount)) * 100)
+    });
   }
 
   return blocks;
