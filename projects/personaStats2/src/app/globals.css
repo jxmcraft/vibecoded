@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+:root {
+  --background: #000000;
+  --foreground: #ffffff;
+  --persona-red: #e60012;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-persona-red: #e60012;
+  --color-ink: #000000;
+  --color-paper: #ffffff;
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #000000;
+    --foreground: #ffffff;
+  }
+}
+
+body {
+  background: var(--color-ink);
+  color: var(--color-paper);
+  font-family: var(--font-sans);
+}
+
+/** Bebas Neue (Google); default display for UI body copy and pentagram labels. */
+.font-bebas {
+  font-family: var(--font-bebas), Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif;
+}
+
+/** Persona-style menu prototype — use only on hero titles and primary CTAs (not stat names on radar). */
+.font-p5-display {
+  font-family: var(--font-p5-menu), var(--font-bebas), Impact, Haettenschweiler, "Arial Narrow Bold",
+    sans-serif;
+}
+
+.font-marker {
+  font-family: var(--font-marker), "Brush Script MT", cursive;
+}
+
+@keyframes rain-fall {
+  0% {
+    transform: translateY(0) skewX(-18deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.38;
+  }
+  100% {
+    transform: translateY(130vh) skewX(-18deg);
+    opacity: 0.14;
+  }
+}
+
+.rain-drop {
+  transform: skewX(-18deg);
+  animation-name: rain-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
