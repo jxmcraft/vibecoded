@@ -2,10 +2,22 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import { findActivityById } from "@/data/activities";
+import {
+  findConfidantById,
+  rankUpChatLine,
+  emptyBondXpByStat,
+  emptyConfidantPicks,
+} from "@/data/confidants";
 import { DEFAULT_BGM_TRACK_ID } from "@/data/audioTracks";
 import { DAILY_MISSION_IDS } from "@/data/dailyMissions";
 import { DEFAULT_BGM_VOLUME, DEFAULT_SFX_VOLUME, clampVolume01 } from "@/lib/audioLevels";
 import { dateKeyFromDate } from "@/lib/dateKey";
+import { applyBondXp, bondXpFromStatXp } from "@/lib/confidantBond";
+import {
+  buildDateRevealPayload,
+  isFirstLogOfLocalDay,
+  type DateRevealPayload,
+} from "@/lib/firstLogOfDay";
 import { emptyStatsRecord, levelFromTotalXp, xpEarned, BASE_XP_PER_MINUTE } from "@/lib/leveling";
 import type {
   ActivityLog,
@@ -42,6 +54,8 @@ const defaultUserState: UserState = {
   activityLogs: [],
   dailyMissionState: emptyMissionState(),
   pendingSession: null,
+  confidantByStat: emptyConfidantPicks(),
+  bondXpByStat: emptyBondXpByStat(),
 };
 
 export type LogActivityResult =
@@ -76,6 +90,17 @@ function rolloverMissionState(dm: DailyMissionState, todayKey: string): DailyMis
 
 type ApplyLogInput = UserState & { pendingAllOutAttack: boolean };
 
+export type ConfidantRankUpPayload = {
+  confidantId: string;
+  displayName: string;
+  shortName: string;
+  stat: StatType;
+  prevRank: number;
+  newRank: number;
+  /** IM-style one-liner (Phase 7 in-app “text”) */
+  chatLine: string;
+};
+
 function applyActivityLog(
   s: ApplyLogInput,
   activityId: string,
@@ -85,10 +110,16 @@ function applyActivityLog(
       ok: true;
       patch: Pick<
         UserState,
-        "stats" | "activityLogs" | "streak" | "dailyMissionState"
+        | "stats"
+        | "activityLogs"
+        | "streak"
+        | "dailyMissionState"
+        | "bondXpByStat"
       > & {
         lastLevelUp: { stat: StatType; from: number; to: number } | null;
         pendingAllOutAttack: boolean;
+        pendingDateReveal: DateRevealPayload | null;
+        pendingConfidantRankUp: ConfidantRankUpPayload | null;
       };
       result: LogActivityResult;
     }
@@ -145,6 +176,34 @@ function applyActivityLog(
     triggerAllOutAttack,
   };
 
+  const pendingDateReveal = isFirstLogOfLocalDay(s.activityLogs, todayKey)
+    ? buildDateRevealPayload(now)
+    : null;
+
+  let bondXpByStat = s.bondXpByStat;
+  let pendingConfidantRankUp: ConfidantRankUpPayload | null = null;
+
+  const pickId = s.confidantByStat[stat];
+  const partner = pickId ? findConfidantById(pickId) : undefined;
+  if (partner && partner.stat === stat) {
+    const delta = bondXpFromStatXp(xp);
+    const prevBond = s.bondXpByStat[stat] ?? 0;
+    const { newBondXp, rankUp } = applyBondXp(prevBond, delta);
+    bondXpByStat = { ...s.bondXpByStat, [stat]: newBondXp };
+
+    if (rankUp) {
+      pendingConfidantRankUp = {
+        confidantId: partner.id,
+        displayName: partner.displayName,
+        shortName: partner.shortName,
+        stat,
+        prevRank: rankUp.prevRank,
+        newRank: rankUp.newRank,
+        chatLine: rankUpChatLine(partner.shortName, rankUp.newRank, stat),
+      };
+    }
+  }
+
   return {
     ok: true,
     patch: {
@@ -157,6 +216,9 @@ function applyActivityLog(
       dailyMissionState,
       lastLevelUp: leveledUp ? { stat, from: prevLevel, to: newLevel } : null,
       pendingAllOutAttack: triggerAllOutAttack ? true : s.pendingAllOutAttack,
+      pendingDateReveal,
+      bondXpByStat,
+      pendingConfidantRankUp,
     },
     result,
   };
@@ -165,12 +227,17 @@ function applyActivityLog(
 type PhantomStore = UserState & {
   lastLevelUp: { stat: StatType; from: number; to: number } | null;
   pendingAllOutAttack: boolean;
+  pendingDateReveal: DateRevealPayload | null;
+  pendingConfidantRankUp: ConfidantRankUpPayload | null;
   setSettings: (partial: Partial<UserState["settings"]>) => void;
+  setConfidantForStat: (stat: StatType, confidantId: string | null) => void;
   addStatXp: (stat: StatType, amount: number) => void;
   startActivitySession: (activityId: string, durationMinutes: number) => StartSessionResult;
   cancelActivitySession: () => void;
   claimActivitySession: () => LogActivityResult;
   clearLastLevelUp: () => void;
+  clearDateReveal: () => void;
+  clearConfidantRankUp: () => void;
   dismissAllOutAttack: () => void;
 };
 
@@ -180,6 +247,8 @@ export const useStore = create<PhantomStore>()(
       ...defaultUserState,
       lastLevelUp: null,
       pendingAllOutAttack: false,
+      pendingDateReveal: null,
+      pendingConfidantRankUp: null,
 
       setSettings: (partial) =>
         set((s) => {
@@ -194,6 +263,24 @@ export const useStore = create<PhantomStore>()(
         }),
 
       clearLastLevelUp: () => set({ lastLevelUp: null }),
+
+      clearDateReveal: () => set({ pendingDateReveal: null }),
+
+      clearConfidantRankUp: () => set({ pendingConfidantRankUp: null }),
+
+      setConfidantForStat: (stat, confidantId) =>
+        set((s) => {
+          if (confidantId === null) {
+            return {
+              confidantByStat: { ...s.confidantByStat, [stat]: null },
+            };
+          }
+          const c = findConfidantById(confidantId);
+          if (!c || c.stat !== stat) return {};
+          return {
+            confidantByStat: { ...s.confidantByStat, [stat]: confidantId },
+          };
+        }),
 
       dismissAllOutAttack: () => {
         const todayKey = dateKeyFromDate(new Date());
@@ -269,7 +356,7 @@ export const useStore = create<PhantomStore>()(
     {
       name: STORAGE_KEY,
       storage: createJSONStorage(() => localStorage),
-      version: 5,
+      version: 6,
       migrate: (persisted, version) => {
         let p = persisted as Partial<UserState> & Record<string, unknown>;
         if (version < 2) {
@@ -325,6 +412,13 @@ export const useStore = create<PhantomStore>()(
             },
           };
         }
+        if (version < 6) {
+          p = {
+            ...p,
+            confidantByStat: emptyConfidantPicks(),
+            bondXpByStat: emptyBondXpByStat(),
+          };
+        }
         return p as unknown;
       },
       partialize: (state) => ({
@@ -334,6 +428,8 @@ export const useStore = create<PhantomStore>()(
         activityLogs: state.activityLogs,
         dailyMissionState: state.dailyMissionState,
         pendingSession: state.pendingSession,
+        confidantByStat: state.confidantByStat,
+        bondXpByStat: state.bondXpByStat,
       }),
       skipHydration: true,
     },

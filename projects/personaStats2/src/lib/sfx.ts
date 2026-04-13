@@ -7,8 +7,21 @@ import { useStore } from "@/store/useStore";
  * - `LevelUpOverlay` — levelUp
  * - `AllOutAttackOverlay` — allOut
  * - `PersonaMusicPlayer` — test hit (claim sample)
+ * - Fullscreen MENU — menuOpen / menuMove / menuConfirm / menuCancel
+ * - `DateTransitionOverlay` — dateReveal (first log of local day)
+ * - `ConfidantRankUpOverlay` — confidantRankUp
  */
-export type PhantomSfxKind = "claim" | "levelUp" | "allOut" | "startSession";
+export type PhantomSfxKind =
+  | "claim"
+  | "levelUp"
+  | "allOut"
+  | "startSession"
+  | "menuOpen"
+  | "menuMove"
+  | "menuConfirm"
+  | "menuCancel"
+  | "dateReveal"
+  | "confidantRankUp";
 
 let sharedCtx: AudioContext | null = null;
 
@@ -71,6 +84,32 @@ export function playPhantomSfx(kind: PhantomSfxKind) {
       break;
     case "startSession":
       beep(ctx, 330, t, 0.05, 0.05, master);
+      break;
+    case "menuOpen":
+      beep(ctx, 380, t, 0.04, 0.055, master);
+      beep(ctx, 520, t + 0.05, 0.05, 0.06, master);
+      beep(ctx, 660, t + 0.11, 0.08, 0.065, master);
+      break;
+    case "menuMove":
+      beep(ctx, 620, t, 0.028, 0.045, master);
+      break;
+    case "menuConfirm":
+      beep(ctx, 480, t, 0.045, 0.06, master);
+      beep(ctx, 720, t + 0.06, 0.07, 0.055, master);
+      break;
+    case "menuCancel":
+      beep(ctx, 280, t, 0.06, 0.05, master);
+      beep(ctx, 200, t + 0.07, 0.08, 0.04, master);
+      break;
+    case "dateReveal":
+      beep(ctx, 392, t, 0.06, 0.055, master);
+      beep(ctx, 523, t + 0.08, 0.08, 0.06, master);
+      beep(ctx, 659, t + 0.17, 0.1, 0.05, master);
+      break;
+    case "confidantRankUp":
+      beep(ctx, 415, t, 0.05, 0.05, master);
+      beep(ctx, 523, t + 0.06, 0.06, 0.055, master);
+      beep(ctx, 622, t + 0.14, 0.1, 0.06, master);
       break;
   }
 }

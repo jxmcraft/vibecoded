@@ -16,13 +16,21 @@ export function HideoutSettings() {
   return (
     <div className="relative z-10 mx-auto flex min-h-full max-w-lg flex-col gap-8 bg-transparent px-5 py-10 sm:px-8">
       <header className="space-y-4 border-b border-paper/15 pb-6">
-        <PersonaNavLink
-          href="/"
-          className="inline-block font-p5-display text-xs tracking-[0.35em] text-persona-red hover:underline"
-        >
-          ← BACK
-        </PersonaNavLink>
-        <h1 className="font-p5-display text-4xl tracking-[0.2em] text-paper">HIDEOUT</h1>
+        <div className="flex flex-wrap gap-4">
+          <PersonaNavLink
+            href="/"
+            className="inline-block font-p5-display text-xs tracking-[0.35em] text-persona-red hover:underline"
+          >
+            ← BACK
+          </PersonaNavLink>
+          <PersonaNavLink
+            href="/profile"
+            className="inline-block font-p5-display text-xs tracking-[0.35em] text-paper/80 hover:text-persona-red hover:underline"
+          >
+            PROFILE
+          </PersonaNavLink>
+        </div>
+        <h1 className="font-p5-display text-4xl tracking-[0.2em] text-paper">SETTINGS</h1>
         <p className="font-marker text-sm text-paper/60">
           Rain overlay, BGM, and UI hits. Register more tracks in{" "}
           <code className="text-persona-red/90">src/data/audioTracks.ts</code> after adding files to{" "}
@@ -34,7 +42,7 @@ export function HideoutSettings() {
         <li className="flex flex-col gap-4 border-2 border-paper/20 bg-black/40 px-4 py-4">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="font-p5-display text-lg tracking-widest text-paper">HIDEOUT BGM</p>
+              <p className="font-p5-display text-lg tracking-widest text-paper">SETTINGS BGM</p>
               <p className="font-marker mt-1 text-xs text-paper/50">
                 Loops; use the track list or NEXT to alternate. First tap may be required for audio.
               </p>

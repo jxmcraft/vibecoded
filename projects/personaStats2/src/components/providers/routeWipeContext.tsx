@@ -9,6 +9,9 @@ type RouteWipeContextValue = {
   navigateWithWipe: (href: string) => void;
   phase: RouteWipePhase;
   beginEntryReveal: () => void;
+  /** Call before `router.push` when a custom transition (e.g. menu intro) replaces entry reveal. */
+  skipNextEntryReveal: () => void;
+  consumeSkipEntryReveal: () => boolean;
   onCoverComplete: () => void;
   onRevealComplete: () => void;
   onEntryRevealComplete: () => void;
@@ -20,6 +23,7 @@ export function RouteWipeProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [phase, setPhase] = useState<RouteWipePhase>("idle");
   const pendingHref = useRef<string | null>(null);
+  const skipEntryRevealRef = useRef(false);
 
   const navigateWithWipe = useCallback((href: string) => {
     if (phase !== "idle") return;
@@ -29,6 +33,16 @@ export function RouteWipeProvider({ children }: { children: React.ReactNode }) {
 
   const beginEntryReveal = useCallback(() => {
     setPhase((p) => (p === "idle" ? "entryRevealing" : p));
+  }, []);
+
+  const skipNextEntryReveal = useCallback(() => {
+    skipEntryRevealRef.current = true;
+  }, []);
+
+  const consumeSkipEntryReveal = useCallback(() => {
+    if (!skipEntryRevealRef.current) return false;
+    skipEntryRevealRef.current = false;
+    return true;
   }, []);
 
   const onCoverComplete = useCallback(() => {
@@ -54,6 +68,8 @@ export function RouteWipeProvider({ children }: { children: React.ReactNode }) {
       navigateWithWipe,
       phase,
       beginEntryReveal,
+      skipNextEntryReveal,
+      consumeSkipEntryReveal,
       onCoverComplete,
       onRevealComplete,
       onEntryRevealComplete,
@@ -62,6 +78,8 @@ export function RouteWipeProvider({ children }: { children: React.ReactNode }) {
       navigateWithWipe,
       phase,
       beginEntryReveal,
+      skipNextEntryReveal,
+      consumeSkipEntryReveal,
       onCoverComplete,
       onRevealComplete,
       onEntryRevealComplete,

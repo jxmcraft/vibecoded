@@ -47,6 +47,10 @@ export interface UserState {
   dailyMissionState: DailyMissionState;
   /** When set, user must wait until the timer ends before claiming XP. */
   pendingSession: ActivitySessionState | null;
+  /** Solo confidant (Thieves Guild MVP): chosen partner id per stat, or null. */
+  confidantByStat: Record<StatType, string | null>;
+  /** Bond XP toward confidant rank for that stat (decoupled from which face is picked). */
+  bondXpByStat: Record<StatType, number>;
 }
 
 export interface Activity {

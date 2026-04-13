@@ -5,7 +5,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { ACTIVITIES, findActivityById } from "@/data/activities";
 import { BASE_XP_PER_MINUTE, xpEarned } from "@/lib/leveling";
 import { formatCountdownMs, sessionRemainingMs } from "@/lib/sessionTimer";
-import type { Activity } from "@/lib/models";
+import type { Activity, StatType } from "@/lib/models";
 import { playPhantomSfx } from "@/lib/sfx";
 import { PersonaButton } from "@/components/ui/PersonaButton";
 import { useStore, type LogActivityResult } from "@/store/useStore";
@@ -13,6 +13,8 @@ import { useStore, type LogActivityResult } from "@/store/useStore";
 type TakeActionModalProps = {
   open: boolean;
   onClose: () => void;
+  /** When set, only activities for this stat (e.g. current map location). When unset, full grouped list. */
+  statFilter?: StatType | null;
 };
 
 const DURATION_MIN = 1;
@@ -29,7 +31,12 @@ const GROUPED_ACTIVITIES = (() => {
   return m;
 })();
 
-export function TakeActionModal({ open, onClose }: TakeActionModalProps) {
+function firstActivityIdForStat(stat: StatType): string {
+  const a = ACTIVITIES.find((x) => x.statCategory === stat);
+  return a?.id ?? ACTIVITIES[0]?.id ?? "";
+}
+
+export function TakeActionModal({ open, onClose, statFilter = null }: TakeActionModalProps) {
   const pendingSession = useStore((s) => s.pendingSession);
   const startActivitySession = useStore((s) => s.startActivitySession);
   const cancelActivitySession = useStore((s) => s.cancelActivitySession);
@@ -39,10 +46,17 @@ export function TakeActionModal({ open, onClose }: TakeActionModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
 
-  const [activityId, setActivityId] = useState<string>(ACTIVITIES[0]?.id ?? "");
+  const [activityId, setActivityId] = useState<string>(() =>
+    statFilter ? firstActivityIdForStat(statFilter) : ACTIVITIES[0]?.id ?? "",
+  );
   const [duration, setDuration] = useState<number>(30);
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [formError, setFormError] = useState<string | null>(null);
+
+  const filteredActivities = useMemo(() => {
+    if (!statFilter) return null;
+    return ACTIVITIES.filter((a) => a.statCategory === statFilter);
+  }, [statFilter]);
 
   const activity = useMemo(
     () => ACTIVITIES.find((a) => a.id === activityId),
@@ -130,6 +144,12 @@ export function TakeActionModal({ open, onClose }: TakeActionModalProps) {
 
   if (!open) return null;
 
+  const setupCopy = pendingSession
+    ? "Focus timer is running. XP unlocks only after the countdown reaches zero."
+    : statFilter
+      ? "Activities for this district only. No XP until the clock finishes."
+      : "Pick any activity and duration. No XP until the clock finishes.";
+
   return (
     <div
       className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 p-4 pt-10 pb-16 sm:p-6"
@@ -154,9 +174,7 @@ export function TakeActionModal({ open, onClose }: TakeActionModalProps) {
             TAKE ACTION
           </h2>
           <p className="font-marker max-w-prose text-sm leading-relaxed text-persona-red">
-            {pendingSession
-              ? "Focus timer is running. XP unlocks only after the countdown reaches zero."
-              : "Start a timed session. No XP until the clock finishes."}
+            {setupCopy}
           </p>
         </div>
 
@@ -200,15 +218,23 @@ export function TakeActionModal({ open, onClose }: TakeActionModalProps) {
                 onChange={(e) => setActivityId(e.target.value)}
                 className="mt-2 w-full border-2 border-paper/30 bg-black px-3 py-2 font-bebas text-lg text-paper outline-none focus:border-persona-red"
               >
-                {[...GROUPED_ACTIVITIES.entries()].map(([stat, acts]) => (
-                  <optgroup key={stat} label={stat.toUpperCase()}>
-                    {acts.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name} (×{a.difficultyMultiplier})
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
+                {filteredActivities ? (
+                  filteredActivities.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name} (×{a.difficultyMultiplier})
+                    </option>
+                  ))
+                ) : (
+                  [...GROUPED_ACTIVITIES.entries()].map(([stat, acts]) => (
+                    <optgroup key={stat} label={stat.toUpperCase()}>
+                      {acts.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name} (×{a.difficultyMultiplier})
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))
+                )}
               </select>
             </div>
 
@@ -262,35 +288,35 @@ export function TakeActionModal({ open, onClose }: TakeActionModalProps) {
             </p>
           ) : null}
           <div className="flex flex-wrap justify-end gap-3">
-          {pendingSession ? (
-            <>
-              <PersonaButton type="button" variant="ghost" onClick={abortSession}>
-                ABORT SESSION
-              </PersonaButton>
-              <PersonaButton type="button" variant="secondary" onClick={handleClose}>
-                CLOSE
-              </PersonaButton>
-              {canClaim ? (
-                <PersonaButton type="button" variant="primary" onClick={claim}>
-                  CLAIM XP
+            {pendingSession ? (
+              <>
+                <PersonaButton type="button" variant="ghost" onClick={abortSession}>
+                  ABORT SESSION
                 </PersonaButton>
-              ) : null}
-            </>
-          ) : (
-            <>
-              <PersonaButton type="button" variant="secondary" onClick={handleClose}>
-                CANCEL
-              </PersonaButton>
-              <PersonaButton
-                type="button"
-                variant="primary"
-                onClick={startSession}
-                disabled={!activity}
-              >
-                START FOCUS TIMER
-              </PersonaButton>
-            </>
-          )}
+                <PersonaButton type="button" variant="secondary" onClick={handleClose}>
+                  CLOSE
+                </PersonaButton>
+                {canClaim ? (
+                  <PersonaButton type="button" variant="primary" onClick={claim}>
+                    CLAIM XP
+                  </PersonaButton>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <PersonaButton type="button" variant="secondary" onClick={handleClose}>
+                  CANCEL
+                </PersonaButton>
+                <PersonaButton
+                  type="button"
+                  variant="primary"
+                  onClick={startSession}
+                  disabled={!activity}
+                >
+                  START FOCUS TIMER
+                </PersonaButton>
+              </>
+            )}
           </div>
         </div>
       </div>

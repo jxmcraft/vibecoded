@@ -12,7 +12,7 @@ import { useRouteWipe } from "@/components/providers/routeWipeContext";
 export function RoutePathnameSync() {
   const pathname = usePathname();
   const prevPathname = useRef<string | null>(null);
-  const { phase, beginEntryReveal } = useRouteWipe();
+  const { phase, beginEntryReveal, consumeSkipEntryReveal } = useRouteWipe();
 
   useEffect(() => {
     if (prevPathname.current === null) {
@@ -25,10 +25,14 @@ export function RoutePathnameSync() {
 
     prevPathname.current = pathname;
 
+    if (consumeSkipEntryReveal()) {
+      return;
+    }
+
     if (phase === "idle") {
       beginEntryReveal();
     }
-  }, [pathname, phase, beginEntryReveal]);
+  }, [pathname, phase, beginEntryReveal, consumeSkipEntryReveal]);
 
   return null;
 }

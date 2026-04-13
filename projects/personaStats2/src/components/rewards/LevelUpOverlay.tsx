@@ -11,17 +11,19 @@ const AUTO_MS = 2500;
 
 export function LevelUpOverlay() {
   const lastLevelUp = useStore((s) => s.lastLevelUp);
+  const pendingDateReveal = useStore((s) => s.pendingDateReveal);
+  const pendingConfidantRankUp = useStore((s) => s.pendingConfidantRankUp);
   const clearLastLevelUp = useStore((s) => s.clearLastLevelUp);
   const reduceMotion = useReducedMotion();
 
   useEffect(() => {
-    if (!lastLevelUp) return;
+    if (!lastLevelUp || pendingDateReveal || pendingConfidantRankUp) return;
     playPhantomSfx("levelUp");
     const t = window.setTimeout(() => clearLastLevelUp(), AUTO_MS);
     return () => window.clearTimeout(t);
-  }, [lastLevelUp, clearLastLevelUp]);
+  }, [lastLevelUp, pendingDateReveal, pendingConfidantRankUp, clearLastLevelUp]);
 
-  if (!lastLevelUp) return null;
+  if (!lastLevelUp || pendingDateReveal || pendingConfidantRankUp) return null;
 
   const { stat, from, to } = lastLevelUp;
 

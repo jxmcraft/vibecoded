@@ -11,6 +11,9 @@ const AUTO_DISMISS_MS = 2800;
 
 export function AllOutAttackOverlay() {
   const pending = useStore((s) => s.pendingAllOutAttack);
+  const pendingDateReveal = useStore((s) => s.pendingDateReveal);
+  const lastLevelUp = useStore((s) => s.lastLevelUp);
+  const pendingConfidantRankUp = useStore((s) => s.pendingConfidantRankUp);
   const dismiss = useStore((s) => s.dismissAllOutAttack);
   const reduceMotion = useReducedMotion();
 
@@ -18,23 +21,26 @@ export function AllOutAttackOverlay() {
     dismiss();
   }, [dismiss]);
 
+  const blocked =
+    !pending || pendingDateReveal || !!lastLevelUp || !!pendingConfidantRankUp;
+
   useEffect(() => {
-    if (!pending) return;
+    if (blocked) return;
     playPhantomSfx("allOut");
     const t = window.setTimeout(finish, AUTO_DISMISS_MS);
     return () => window.clearTimeout(t);
-  }, [pending, finish]);
+  }, [blocked, finish]);
 
   useEffect(() => {
-    if (!pending) return;
+    if (blocked) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") finish();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [pending, finish]);
+  }, [blocked, finish]);
 
-  if (!pending) return null;
+  if (blocked) return null;
 
   return (
     <motion.div

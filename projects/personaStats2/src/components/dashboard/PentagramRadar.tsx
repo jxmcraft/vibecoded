@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { motion, useAnimationControls, useReducedMotion } from "framer-motion";
 
 import { STAT_TYPES, type StatType } from "@/lib/models";
+import { confidantChromeForStat } from "@/data/confidants";
 import {
   labelAnchor,
   pentagonRing,
@@ -21,6 +22,7 @@ const labelFont = "var(--font-bebas), Impact, Haettenschweiler, sans-serif";
 
 export function PentagramRadar() {
   const stats = useStore((s) => s.stats);
+  const confidantByStat = useStore((s) => s.confidantByStat);
   const reduceMotion = useReducedMotion();
   const prevFp = useRef<string | null>(null);
   const pulse = useAnimationControls();
@@ -96,6 +98,7 @@ export function PentagramRadar() {
 
         {STAT_TYPES.map((label, i) => {
           const { x, y } = labelAnchor(cx, cy, outer, i);
+          const chrome = confidantChromeForStat(label, confidantByStat);
           return (
             <motion.text
               key={label}
@@ -103,7 +106,8 @@ export function PentagramRadar() {
               y={y}
               textAnchor="middle"
               dominantBaseline="middle"
-              fill="#ffffff"
+              fill="currentColor"
+              className={chrome.labelTextClass}
               style={{ fontFamily: labelFont, fontSize: 11 }}
               initial={motionOn ? { opacity: 0, y: y + 8 } : false}
               animate={{ opacity: 1, y }}

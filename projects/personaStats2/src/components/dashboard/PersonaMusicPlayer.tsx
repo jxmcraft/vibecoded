@@ -38,7 +38,7 @@ export function PersonaMusicPlayer() {
             </p>
           </div>
           <p className="font-p5-display text-[10px] tracking-[0.35em] text-paper/40">
-            HIDEOUT FEED
+            TRACK FEED
           </p>
         </div>
 
