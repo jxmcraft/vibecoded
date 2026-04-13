@@ -10,6 +10,9 @@ import { useStore } from "@/store/useStore";
  * - Fullscreen MENU — menuOpen / menuMove / menuConfirm / menuCancel
  * - `DateTransitionOverlay` — dateReveal (first log of local day)
  * - `ConfidantRankUpOverlay` — confidantRankUp
+ * - `HideoutSettings` — executionFuse (Velvet Room)
+ * - `CallingCardPanel` — callingCardSend
+ * - `WeeklyCallingCardOverlay` — callingCardVictory
  */
 export type PhantomSfxKind =
   | "claim"
@@ -21,15 +24,38 @@ export type PhantomSfxKind =
   | "menuConfirm"
   | "menuCancel"
   | "dateReveal"
-  | "confidantRankUp";
+  | "confidantRankUp"
+  | "executionFuse"
+  | "callingCardSend"
+  | "callingCardVictory";
+
+/** ±5% frequency jitter for Web Audio beeps (good-to-have #3). */
+export function jitterHz(hz: number): number {
+  return hz * (1 + (Math.random() * 0.1 - 0.05));
+}
 
 let sharedCtx: AudioContext | null = null;
+let gestureResumeInstalled = false;
+
+function installGestureResumeForSfx() {
+  if (gestureResumeInstalled || typeof window === "undefined") return;
+  gestureResumeInstalled = true;
+  const kick = () => {
+    const c = sharedCtx;
+    if (c && c.state === "suspended") void c.resume().catch(() => {});
+  };
+  document.addEventListener("pointerdown", kick, { capture: true, passive: true });
+  document.addEventListener("keydown", kick, { capture: true, passive: true });
+}
 
 function getAudioContext(): AudioContext | null {
   if (typeof window === "undefined") return null;
   const Ctx = window.AudioContext ?? (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!Ctx) return null;
-  if (!sharedCtx) sharedCtx = new Ctx();
+  if (!sharedCtx) {
+    sharedCtx = new Ctx();
+    installGestureResumeForSfx();
+  }
   void sharedCtx.resume().catch(() => {});
   return sharedCtx;
 }
@@ -42,14 +68,14 @@ function beep(
   gain: number,
   master: number,
 ) {
-  const peak = Math.max(0.0001, gain * master);
+  const peak = Math.max(0.0001, Math.min(1, gain * master * 1.35));
   const osc = ctx.createOscillator();
   const g = ctx.createGain();
   osc.type = "square";
-  osc.frequency.setValueAtTime(frequency, start);
+  osc.frequency.setValueAtTime(jitterHz(frequency), start);
   g.gain.setValueAtTime(0.0001, start);
-  g.gain.exponentialRampToValueAtTime(peak, start + 0.01);
-  g.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  g.gain.linearRampToValueAtTime(peak, start + 0.012);
+  g.gain.linearRampToValueAtTime(0.0001, start + duration);
   osc.connect(g);
   g.connect(ctx.destination);
   osc.start(start);
@@ -110,6 +136,19 @@ export function playPhantomSfx(kind: PhantomSfxKind) {
       beep(ctx, 415, t, 0.05, 0.05, master);
       beep(ctx, 523, t + 0.06, 0.06, 0.055, master);
       beep(ctx, 622, t + 0.14, 0.1, 0.06, master);
+      break;
+    case "executionFuse":
+      beep(ctx, 180, t, 0.08, 0.07, master);
+      beep(ctx, 880, t + 0.09, 0.1, 0.05, master);
+      break;
+    case "callingCardSend":
+      beep(ctx, 350, t, 0.045, 0.055, master);
+      beep(ctx, 698, t + 0.06, 0.07, 0.06, master);
+      break;
+    case "callingCardVictory":
+      beep(ctx, 262, t, 0.07, 0.065, master);
+      beep(ctx, 523, t + 0.08, 0.09, 0.07, master);
+      beep(ctx, 784, t + 0.19, 0.14, 0.06, master);
       break;
   }
 }

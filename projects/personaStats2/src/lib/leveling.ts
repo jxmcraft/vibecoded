@@ -4,12 +4,19 @@ import { STAT_TYPES, type StatType } from "@/lib/models";
 export const BASE_XP_PER_MINUTE = 1;
 
 /**
+ * Divides raw total XP before the log curve so early sessions do not spike to high levels.
+ * Level ≈ `floor(10 * ln(1 + totalXP / LEVEL_LOG_XP_SCALE))` (capped at 99).
+ */
+export const LEVEL_LOG_XP_SCALE = 120;
+
+/**
  * Level from lifetime total XP. PRD §3 (max 99).
  * `Math.log` is natural logarithm.
  */
 export function levelFromTotalXp(totalXP: number): number {
   const x = Math.max(0, totalXP);
-  return Math.min(99, Math.floor(10 * Math.log(x + 1)));
+  const ratio = 1 + x / LEVEL_LOG_XP_SCALE;
+  return Math.min(99, Math.floor(10 * Math.log(ratio)));
 }
 
 /**
@@ -17,14 +24,16 @@ export function levelFromTotalXp(totalXP: number): number {
  * When current level is `level`, this is the threshold for reaching `level + 1`.
  */
 export function xpNextThreshold(level: number): number {
-  if (level >= 99) return Math.ceil(Math.exp(99 / 10) - 1);
-  return Math.ceil(Math.exp((level + 1) / 10) - 1);
+  if (level >= 99) {
+    return Math.ceil(LEVEL_LOG_XP_SCALE * (Math.exp(99 / 10) - 1));
+  }
+  return Math.ceil(LEVEL_LOG_XP_SCALE * (Math.exp((level + 1) / 10) - 1));
 }
 
 /** Minimum total XP such that `levelFromTotalXp(xp) >= targetLevel` (for 0 <= targetLevel <= 99). */
 export function xpMinTotalForLevel(targetLevel: number): number {
   if (targetLevel <= 0) return 0;
-  return Math.ceil(Math.exp(targetLevel / 10) - 1);
+  return Math.ceil(LEVEL_LOG_XP_SCALE * (Math.exp(targetLevel / 10) - 1));
 }
 
 /**

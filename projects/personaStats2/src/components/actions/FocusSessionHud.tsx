@@ -37,14 +37,20 @@ export function FocusSessionHud({ onOpenModal }: FocusSessionHudProps) {
         <p
           className={`font-bebas text-2xl tabular-nums ${ready ? "text-persona-red" : "text-paper"}`}
           aria-live="polite"
+          aria-label={
+            ready
+              ? "Focus timer finished — open session to claim XP"
+              : `Focus time remaining ${formatCountdownMs(rem)}`
+          }
         >
-          {ready ? "CLAIM" : formatCountdownMs(rem)}
+          {ready ? "READY" : formatCountdownMs(rem)}
         </p>
         <PersonaButton
           type="button"
           variant="secondary"
           onClick={onOpenModal}
           className="border-paper px-3 py-1.5 text-xs"
+          aria-label={ready ? "Open modal to claim experience" : "Open focus session modal"}
         >
           OPEN
         </PersonaButton>

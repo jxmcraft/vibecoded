@@ -10,13 +10,21 @@ type PersonaNavLinkProps = Omit<ComponentProps<typeof Link>, "href" | "onClick">
   onClick?: (e: React.MouseEvent<HTMLAnchorElement>) => void;
 };
 
-export function PersonaNavLink({ href, onClick, ...rest }: PersonaNavLinkProps) {
+export function PersonaNavLink({ href, onClick, className, ...rest }: PersonaNavLinkProps) {
   const { navigateWithWipe, phase } = useRouteWipe();
   const dest = href;
+
+  const mergedClass = [
+    "rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-black",
+    className,
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <Link
       href={href}
+      className={mergedClass}
       onClick={(e) => {
         onClick?.(e);
         if (e.defaultPrevented) return;

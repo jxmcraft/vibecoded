@@ -60,20 +60,6 @@ export function ProfilePage() {
         <header className="relative border-b-4 border-persona-red bg-black/82 px-4 py-6 backdrop-blur-[3px] sm:px-10 sm:py-8">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
             <div className="space-y-4">
-              <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-                <PersonaNavLink
-                  href="/"
-                  className="font-p5-display text-sm tracking-[0.28em] text-persona-red hover:underline sm:text-base"
-                >
-                  ← HOME
-                </PersonaNavLink>
-                <PersonaNavLink
-                  href="/settings"
-                  className="font-p5-display text-sm tracking-[0.28em] text-paper/85 hover:text-persona-red hover:underline sm:text-base"
-                >
-                  SETTINGS
-                </PersonaNavLink>
-              </div>
               <h1 className="font-p5-display text-5xl leading-none tracking-[0.14em] text-paper [text-shadow:3px_3px_0_#000] sm:text-6xl md:text-7xl">
                 PROFILE
               </h1>

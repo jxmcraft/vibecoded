@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { ACTIVITIES, findActivityById } from "@/data/activities";
+import { grantedStatXpFromBase } from "@/lib/executionFuse";
 import { BASE_XP_PER_MINUTE, xpEarned } from "@/lib/leveling";
 import { formatCountdownMs, sessionRemainingMs } from "@/lib/sessionTimer";
 import type { Activity, StatType } from "@/lib/models";
@@ -41,8 +42,11 @@ export function TakeActionModal({ open, onClose, statFilter = null }: TakeAction
   const startActivitySession = useStore((s) => s.startActivitySession);
   const cancelActivitySession = useStore((s) => s.cancelActivitySession);
   const claimActivitySession = useStore((s) => s.claimActivitySession);
+  const globalXpMultiplier = useStore((s) => s.globalXpMultiplier ?? 1);
 
   const titleId = useId();
+  const descId = useId();
+  const activitySelectId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
 
@@ -71,8 +75,9 @@ export function TakeActionModal({ open, onClose, statFilter = null }: TakeAction
   const previewXp = useMemo(() => {
     if (!activity) return 0;
     const d = Math.min(DURATION_MAX, Math.max(DURATION_MIN, Math.round(duration)));
-    return Math.round(xpEarned(d, BASE_XP_PER_MINUTE, activity.difficultyMultiplier));
-  }, [activity, duration]);
+    const base = Math.round(xpEarned(d, BASE_XP_PER_MINUTE, activity.difficultyMultiplier));
+    return grantedStatXpFromBase(base, globalXpMultiplier);
+  }, [activity, duration, globalXpMultiplier]);
 
   const remainingMs = useMemo(() => {
     if (!pendingSession) return 0;
@@ -163,8 +168,9 @@ export function TakeActionModal({ open, onClose, statFilter = null }: TakeAction
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        aria-describedby={descId}
         tabIndex={-1}
-        className="max-h-[min(85vh,720px)] w-full max-w-lg overflow-y-auto border-4 border-persona-red bg-ink p-6 shadow-[12px_12px_0_0_rgba(230,0,18,0.35)] outline-none"
+        className="max-h-[min(85vh,720px)] w-full max-w-lg overflow-y-auto border-4 border-persona-red bg-ink p-6 shadow-[12px_12px_0_0_rgba(230,0,18,0.35)] outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
       >
         <div className="mb-6 space-y-3 border-b border-paper/15 pb-5">
           <h2
@@ -173,7 +179,15 @@ export function TakeActionModal({ open, onClose, statFilter = null }: TakeAction
           >
             TAKE ACTION
           </h2>
-          <p className="font-marker max-w-prose text-sm leading-relaxed text-persona-red">
+          {statFilter && !pendingSession ? (
+            <p className="font-p5-display inline-block border border-persona-red/60 bg-persona-red/15 px-3 py-1 text-[10px] tracking-[0.28em] text-paper/90">
+              DISTRICT · {statFilter.toUpperCase()}
+            </p>
+          ) : null}
+          <p
+            id={descId}
+            className="font-marker max-w-prose text-sm leading-relaxed text-persona-red"
+          >
             {setupCopy}
           </p>
         </div>
@@ -196,7 +210,7 @@ export function TakeActionModal({ open, onClose, statFilter = null }: TakeAction
               aria-live="polite"
             >
               <p className="font-bebas text-xs tracking-[0.35em] text-paper/70">
-                {canClaim ? "TIME UP" : "REMAINING"}
+                {canClaim ? "READY" : "REMAINING"}
               </p>
               <p className="font-bebas mt-2 text-5xl tabular-nums text-persona-red sm:text-6xl">
                 {canClaim ? "00:00" : formatCountdownMs(remainingMs)}
@@ -210,13 +224,17 @@ export function TakeActionModal({ open, onClose, statFilter = null }: TakeAction
         ) : (
           <div className="mt-6 space-y-5">
             <div>
-              <label className="font-bebas text-xs tracking-widest text-paper/70">
+              <label
+                htmlFor={activitySelectId}
+                className="font-bebas text-xs tracking-widest text-paper/70"
+              >
                 ACTIVITY
               </label>
               <select
+                id={activitySelectId}
                 value={activityId}
                 onChange={(e) => setActivityId(e.target.value)}
-                className="mt-2 w-full border-2 border-paper/30 bg-black px-3 py-2 font-bebas text-lg text-paper outline-none focus:border-persona-red"
+                className="mt-2 w-full border-2 border-paper/30 bg-black px-3 py-2 font-bebas text-lg text-paper outline-none focus:border-persona-red focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
               >
                 {filteredActivities ? (
                   filteredActivities.map((a) => (
@@ -252,7 +270,7 @@ export function TakeActionModal({ open, onClose, statFilter = null }: TakeAction
                 max={DURATION_MAX}
                 value={duration}
                 onChange={(e) => setDuration(Number(e.target.value))}
-                className="mt-2 w-full border-2 border-paper/30 bg-black px-3 py-2 font-bebas text-xl text-paper outline-none focus:border-persona-red"
+                className="mt-2 w-full border-2 border-paper/30 bg-black px-3 py-2 font-bebas text-xl text-paper outline-none focus:border-persona-red focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
               />
               <div className="mt-2 flex flex-wrap gap-2">
                 {CHIPS.map((m) => (

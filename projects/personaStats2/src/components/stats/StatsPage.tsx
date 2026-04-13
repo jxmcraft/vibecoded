@@ -2,8 +2,6 @@
 
 import { AllOutAttackOverlay } from "@/components/rewards/AllOutAttackOverlay";
 import { LevelUpOverlay } from "@/components/rewards/LevelUpOverlay";
-import { PersonaNavLink } from "@/components/ui/PersonaNavLink";
-
 import { PentagramRadar } from "@/components/dashboard/PentagramRadar";
 import { StatReadout } from "@/components/dashboard/StatReadout";
 
@@ -14,26 +12,6 @@ export function StatsPage() {
         <header className="relative border-b-4 border-persona-red bg-black px-5 py-6 sm:px-10">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="space-y-3">
-              <div className="flex flex-wrap gap-4">
-                <PersonaNavLink
-                  href="/"
-                  className="font-p5-display text-xs tracking-[0.35em] text-persona-red hover:underline sm:text-sm"
-                >
-                  ← HOME
-                </PersonaNavLink>
-                <PersonaNavLink
-                  href="/missions"
-                  className="font-p5-display text-xs tracking-[0.35em] text-paper/80 hover:text-persona-red hover:underline sm:text-sm"
-                >
-                  MISSIONS
-                </PersonaNavLink>
-                <PersonaNavLink
-                  href="/settings"
-                  className="font-p5-display text-xs tracking-[0.35em] text-paper/80 hover:text-persona-red hover:underline sm:text-sm"
-                >
-                  SETTINGS
-                </PersonaNavLink>
-              </div>
               <h1 className="font-p5-display text-4xl tracking-[0.2em] text-paper sm:text-5xl">
                 STATS
               </h1>

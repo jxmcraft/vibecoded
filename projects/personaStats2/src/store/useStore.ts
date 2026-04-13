@@ -8,23 +8,32 @@ import {
   emptyBondXpByStat,
   emptyConfidantPicks,
 } from "@/data/confidants";
+import { CALLING_CARD_PLEDGE_MAX_LEN, WEEKLY_BONUS_XP_PER_STAT } from "@/data/callingCard";
 import { DEFAULT_BGM_TRACK_ID } from "@/data/audioTracks";
 import { DAILY_MISSION_IDS } from "@/data/dailyMissions";
 import { DEFAULT_BGM_VOLUME, DEFAULT_SFX_VOLUME, clampVolume01 } from "@/lib/audioLevels";
+import { computeCallingCardRolloverPatch, sundayWeekStartKey } from "@/lib/callingCardWeek";
 import { dateKeyFromDate } from "@/lib/dateKey";
 import { applyBondXp, bondXpFromStatXp } from "@/lib/confidantBond";
+import {
+  grantedStatXpFromBase,
+  MAX_GLOBAL_XP_MULTIPLIER,
+  multiplierAfterExecutionFuse,
+} from "@/lib/executionFuse";
 import {
   buildDateRevealPayload,
   isFirstLogOfLocalDay,
   type DateRevealPayload,
 } from "@/lib/firstLogOfDay";
 import { emptyStatsRecord, levelFromTotalXp, xpEarned, BASE_XP_PER_MINUTE } from "@/lib/leveling";
-import type {
-  ActivityLog,
-  ActivitySessionState,
-  DailyMissionState,
-  StatType,
-  UserState,
+import {
+  STAT_TYPES,
+  type ActivityLog,
+  type ActivitySessionState,
+  type CalendarEvent,
+  type DailyMissionState,
+  type StatType,
+  type UserState,
 } from "@/lib/models";
 import { allMissionsCompleteForDay, completedMissionIdsForDay } from "@/lib/missions";
 import { streakAfterLog } from "@/lib/streak";
@@ -48,6 +57,7 @@ const defaultUserState: UserState = {
     sfxEnabled: true,
     rainEnabled: true,
     bgmTrackId: DEFAULT_BGM_TRACK_ID,
+    bgmShuffle: true,
     bgmVolume: DEFAULT_BGM_VOLUME,
     sfxVolume: DEFAULT_SFX_VOLUME,
   },
@@ -56,6 +66,13 @@ const defaultUserState: UserState = {
   pendingSession: null,
   confidantByStat: emptyConfidantPicks(),
   bondXpByStat: emptyBondXpByStat(),
+  globalXpMultiplier: 1,
+  callingCard: null,
+  monitoredMode: false,
+  lastWeeklyOutcomeWeekStartKey: null,
+  pendingWeeklyCallingCardReward: false,
+  weeklyRewardForWeekStartKey: null,
+  calendarEvents: [],
 };
 
 export type LogActivityResult =
@@ -78,6 +95,15 @@ function newLogId(): string {
   }
   return `log-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
+
+function newCalendarEventId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `cal-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function rolloverMissionState(dm: DailyMissionState, todayKey: string): DailyMissionState {
   if (dm.dateKey === todayKey) return dm;
@@ -130,7 +156,9 @@ function applyActivityLog(
   }
 
   const d = Math.min(DURATION_MAX, Math.max(DURATION_MIN, Math.round(durationMinutes)));
-  const xp = Math.round(xpEarned(d, BASE_XP_PER_MINUTE, activity.difficultyMultiplier));
+  const baseXp = Math.round(xpEarned(d, BASE_XP_PER_MINUTE, activity.difficultyMultiplier));
+  const mult = s.globalXpMultiplier ?? 1;
+  const xp = grantedStatXpFromBase(baseXp, mult);
   if (xp <= 0) {
     return { ok: false, reason: "No XP for that duration" };
   }
@@ -229,8 +257,15 @@ type PhantomStore = UserState & {
   pendingAllOutAttack: boolean;
   pendingDateReveal: DateRevealPayload | null;
   pendingConfidantRankUp: ConfidantRankUpPayload | null;
+  /** Incremented to open `TakeActionModal` on Home or Map (see `PhantomBottomDock`). Not persisted. */
+  takeActionModalRequest: number;
+  bumpTakeActionModalRequest: () => void;
+  /** Set by `BgmPlayer` for dashboard “now spinning” when shuffle is on. Not persisted. */
+  bgmNowPlayingLabel: string;
+  setBgmNowPlayingLabel: (label: string) => void;
   setSettings: (partial: Partial<UserState["settings"]>) => void;
   setConfidantForStat: (stat: StatType, confidantId: string | null) => void;
+  executionFuse: (stat: StatType) => boolean;
   addStatXp: (stat: StatType, amount: number) => void;
   startActivitySession: (activityId: string, durationMinutes: number) => StartSessionResult;
   cancelActivitySession: () => void;
@@ -239,6 +274,12 @@ type PhantomStore = UserState & {
   clearDateReveal: () => void;
   clearConfidantRankUp: () => void;
   dismissAllOutAttack: () => void;
+  syncCallingCard: () => void;
+  sendCallingCard: (pledge: string) => boolean;
+  dismissWeeklyCallingCardReward: () => void;
+  addCalendarEvent: (input: { title: string; dateKey: string }) => void;
+  updateCalendarEvent: (id: string, partial: Partial<Pick<CalendarEvent, "title" | "dateKey">>) => void;
+  removeCalendarEvent: (id: string) => void;
 };
 
 export const useStore = create<PhantomStore>()(
@@ -249,6 +290,14 @@ export const useStore = create<PhantomStore>()(
       pendingAllOutAttack: false,
       pendingDateReveal: null,
       pendingConfidantRankUp: null,
+      takeActionModalRequest: 0,
+
+      bumpTakeActionModalRequest: () =>
+        set((s) => ({ takeActionModalRequest: s.takeActionModalRequest + 1 })),
+
+      bgmNowPlayingLabel: "",
+
+      setBgmNowPlayingLabel: (label) => set({ bgmNowPlayingLabel: label }),
 
       setSettings: (partial) =>
         set((s) => {
@@ -282,6 +331,19 @@ export const useStore = create<PhantomStore>()(
           };
         }),
 
+      executionFuse: (stat) => {
+        const s = get();
+        if (levelFromTotalXp(s.stats[stat].totalXP) < 99) return false;
+        set({
+          stats: {
+            ...s.stats,
+            [stat]: { totalXP: 0, level: 0 },
+          },
+          globalXpMultiplier: multiplierAfterExecutionFuse(s.globalXpMultiplier ?? 1),
+        });
+        return true;
+      },
+
       dismissAllOutAttack: () => {
         const todayKey = dateKeyFromDate(new Date());
         set((s) => ({
@@ -293,11 +355,49 @@ export const useStore = create<PhantomStore>()(
         }));
       },
 
+      syncCallingCard: () => {
+        set((s) => ({ ...computeCallingCardRolloverPatch(s, new Date()) }));
+      },
+
+      sendCallingCard: (pledge) => {
+        if (get().pendingWeeklyCallingCardReward) return false;
+        const trimmed = pledge.trim().slice(0, CALLING_CARD_PLEDGE_MAX_LEN);
+        if (!trimmed) return false;
+        set((s) => {
+          const rollover = computeCallingCardRolloverPatch(s, new Date());
+          const w = sundayWeekStartKey(new Date());
+          return {
+            ...rollover,
+            callingCard: { weekStartKey: w, pledge: trimmed },
+          };
+        });
+        return true;
+      },
+
+      dismissWeeklyCallingCardReward: () => {
+        set((s) => {
+          if (!s.pendingWeeklyCallingCardReward) return {};
+          const stats = { ...s.stats };
+          for (const st of STAT_TYPES) {
+            const c = stats[st];
+            const totalXP = c.totalXP + WEEKLY_BONUS_XP_PER_STAT;
+            stats[st] = { totalXP, level: levelFromTotalXp(totalXP) };
+          }
+          return {
+            stats,
+            pendingWeeklyCallingCardReward: false,
+            weeklyRewardForWeekStartKey: null,
+          };
+        });
+      },
+
       addStatXp: (stat, amount) => {
         const n = Math.max(0, amount);
         if (n === 0) return;
         set((s) => {
-          const totalXP = s.stats[stat].totalXP + n;
+          const xp = grantedStatXpFromBase(n, s.globalXpMultiplier ?? 1);
+          if (xp <= 0) return {};
+          const totalXP = s.stats[stat].totalXP + xp;
           return {
             stats: {
               ...s.stats,
@@ -349,14 +449,53 @@ export const useStore = create<PhantomStore>()(
         if (!applied.ok) {
           return applied;
         }
-        set({ ...applied.patch, pendingSession: null });
+        const logs = applied.patch.activityLogs ?? s.activityLogs;
+        const cardPatch = computeCallingCardRolloverPatch(
+          {
+            callingCard: s.callingCard,
+            lastWeeklyOutcomeWeekStartKey: s.lastWeeklyOutcomeWeekStartKey,
+            activityLogs: logs,
+          },
+          new Date(),
+        );
+        set({ ...applied.patch, ...cardPatch, pendingSession: null });
         return applied.result;
+      },
+
+      addCalendarEvent: (input) => {
+        const title = input.title.trim();
+        const dateKey = input.dateKey.trim();
+        if (!title || !DATE_KEY_RE.test(dateKey)) return;
+        const ev: CalendarEvent = { id: newCalendarEventId(), title, dateKey };
+        set((s) => ({ calendarEvents: [...s.calendarEvents, ev] }));
+      },
+
+      updateCalendarEvent: (id, partial) => {
+        set((s) => ({
+          calendarEvents: s.calendarEvents.map((ev) => {
+            if (ev.id !== id) return ev;
+            const next = { ...ev, ...partial };
+            if (partial.title !== undefined) next.title = partial.title.trim();
+            if (partial.dateKey !== undefined) {
+              const dk = partial.dateKey.trim();
+              if (!DATE_KEY_RE.test(dk)) return ev;
+              next.dateKey = dk;
+            }
+            return next;
+          }),
+        }));
+      },
+
+      removeCalendarEvent: (id) => {
+        set((s) => ({
+          calendarEvents: s.calendarEvents.filter((ev) => ev.id !== id),
+        }));
       },
     }),
     {
       name: STORAGE_KEY,
       storage: createJSONStorage(() => localStorage),
-      version: 6,
+      version: 10,
       migrate: (persisted, version) => {
         let p = persisted as Partial<UserState> & Record<string, unknown>;
         if (version < 2) {
@@ -392,6 +531,7 @@ export const useStore = create<PhantomStore>()(
                 typeof prev?.bgmTrackId === "string"
                   ? prev.bgmTrackId
                   : DEFAULT_BGM_TRACK_ID,
+              bgmShuffle: true,
               bgmVolume: DEFAULT_BGM_VOLUME,
               sfxVolume: DEFAULT_SFX_VOLUME,
             },
@@ -407,6 +547,7 @@ export const useStore = create<PhantomStore>()(
               rainEnabled: s?.rainEnabled ?? true,
               bgmTrackId:
                 typeof s?.bgmTrackId === "string" ? s.bgmTrackId : DEFAULT_BGM_TRACK_ID,
+              bgmShuffle: typeof s?.bgmShuffle === "boolean" ? s.bgmShuffle : true,
               bgmVolume: clampVolume01(s?.bgmVolume, DEFAULT_BGM_VOLUME),
               sfxVolume: clampVolume01(s?.sfxVolume, DEFAULT_SFX_VOLUME),
             },
@@ -417,6 +558,71 @@ export const useStore = create<PhantomStore>()(
             ...p,
             confidantByStat: emptyConfidantPicks(),
             bondXpByStat: emptyBondXpByStat(),
+          };
+        }
+        if (version < 7) {
+          const rawStats = p.stats as UserState["stats"] | undefined;
+          if (rawStats && typeof rawStats === "object") {
+            const nextStats = { ...rawStats } as UserState["stats"];
+            for (const st of STAT_TYPES) {
+              const cell = nextStats[st];
+              if (cell && typeof cell.totalXP === "number") {
+                nextStats[st] = {
+                  totalXP: cell.totalXP,
+                  level: levelFromTotalXp(cell.totalXP),
+                };
+              }
+            }
+            p = { ...p, stats: nextStats };
+          }
+          const g = p.globalXpMultiplier;
+          p = {
+            ...p,
+            globalXpMultiplier:
+              typeof g === "number" && Number.isFinite(g) && g > 0
+                ? Math.min(MAX_GLOBAL_XP_MULTIPLIER, g)
+                : 1,
+          };
+        }
+        if (version < 8) {
+          p = {
+            ...p,
+            callingCard: null,
+            monitoredMode: false,
+            lastWeeklyOutcomeWeekStartKey: null,
+            pendingWeeklyCallingCardReward: false,
+            weeklyRewardForWeekStartKey: null,
+          };
+        }
+        if (version < 9) {
+          const s = p.settings as (UserState["settings"] & { bgmShuffle?: boolean }) | undefined;
+          p = {
+            ...p,
+            settings: {
+              bgmEnabled: s?.bgmEnabled ?? true,
+              sfxEnabled: s?.sfxEnabled ?? true,
+              rainEnabled: s?.rainEnabled ?? true,
+              bgmTrackId:
+                typeof s?.bgmTrackId === "string" ? s.bgmTrackId : DEFAULT_BGM_TRACK_ID,
+              bgmShuffle: typeof s?.bgmShuffle === "boolean" ? s.bgmShuffle : true,
+              bgmVolume: clampVolume01(s?.bgmVolume, DEFAULT_BGM_VOLUME),
+              sfxVolume: clampVolume01(s?.sfxVolume, DEFAULT_SFX_VOLUME),
+            },
+          };
+        }
+        if (version < 10) {
+          const raw = p.calendarEvents;
+          p = {
+            ...p,
+            calendarEvents: Array.isArray(raw)
+              ? (raw as CalendarEvent[]).filter(
+                  (e) =>
+                    e &&
+                    typeof e.id === "string" &&
+                    typeof e.title === "string" &&
+                    typeof e.dateKey === "string",
+                )
+              : [],
           };
         }
         return p as unknown;
@@ -430,6 +636,13 @@ export const useStore = create<PhantomStore>()(
         pendingSession: state.pendingSession,
         confidantByStat: state.confidantByStat,
         bondXpByStat: state.bondXpByStat,
+        globalXpMultiplier: state.globalXpMultiplier,
+        callingCard: state.callingCard,
+        monitoredMode: state.monitoredMode,
+        lastWeeklyOutcomeWeekStartKey: state.lastWeeklyOutcomeWeekStartKey,
+        pendingWeeklyCallingCardReward: state.pendingWeeklyCallingCardReward,
+        weeklyRewardForWeekStartKey: state.weeklyRewardForWeekStartKey,
+        calendarEvents: state.calendarEvents,
       }),
       skipHydration: true,
     },

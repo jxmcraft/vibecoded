@@ -38,6 +38,8 @@ export interface UserState {
     rainEnabled: boolean;
     /** Key into `BGM_TRACKS` in `src/data/audioTracks.ts`. */
     bgmTrackId: string;
+    /** When true, BGM picks randomly from morning vs night pools by local time (see `audioTracks.ts`). */
+    bgmShuffle: boolean;
     /** 0–1, applied to `<audio>` volume while BGM is playing. */
     bgmVolume: number;
     /** 0–1 master multiplier for Web Audio SFX. */
@@ -51,6 +53,24 @@ export interface UserState {
   confidantByStat: Record<StatType, string | null>;
   /** Bond XP toward confidant rank for that stat (decoupled from which face is picked). */
   bondXpByStat: Record<StatType, number>;
+  /**
+   * Velvet Room: multiplies stat XP from claims and dev `addStatXp`. Stepped by Execution Fuse; capped in `executionFuse.ts`.
+   */
+  globalXpMultiplier: number;
+
+  /** Weekly Calling Card (Sun–Sat): user pledge for the current week, or null. */
+  callingCard: { weekStartKey: string; pledge: string } | null;
+  /** UI “surveillance” mode after a pledged week fails XP target. Cleared on next weekly success. */
+  monitoredMode: boolean;
+  /** Last week start key we already finalized (success or fail) to avoid double-processing. */
+  lastWeeklyOutcomeWeekStartKey: string | null;
+  /** Finisher overlay pending (persisted so reload still shows celebration). */
+  pendingWeeklyCallingCardReward: boolean;
+  /** Which completed week the pending reward is for (bonus XP on dismiss). */
+  weeklyRewardForWeekStartKey: string | null;
+
+  /** Deadlines for `getNearestDeadline` and `/calendar`. */
+  calendarEvents: CalendarEvent[];
 }
 
 export interface Activity {
@@ -66,4 +86,12 @@ export interface ActivityLog {
   durationMinutes: number;
   xpEarned: number;
   timestamp: string;
+}
+
+/** User-defined calendar deadline (Phase 9). */
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  /** Local deadline day `YYYY-MM-DD`. */
+  dateKey: string;
 }

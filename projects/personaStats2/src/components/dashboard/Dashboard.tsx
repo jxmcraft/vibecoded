@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { FocusSessionHud } from "@/components/actions/FocusSessionHud";
 import { TakeActionModal } from "@/components/actions/TakeActionModal";
@@ -12,6 +12,7 @@ import { PersonaNavLink } from "@/components/ui/PersonaNavLink";
 
 import { DevXpControls } from "./DevXpControls";
 import { PersonaMusicPlayer } from "./PersonaMusicPlayer";
+import { useStore } from "@/store/useStore";
 
 type DashboardProps = {
   showDevControls: boolean;
@@ -21,11 +22,20 @@ export function Dashboard({ showDevControls }: DashboardProps) {
   const [actionOpen, setActionOpen] = useState(false);
   const [actionModalCycle, setActionModalCycle] = useState(0);
   const { startProfileMenuIntro } = useMenuIntro();
+  const takeActionModalRequest = useStore((s) => s.takeActionModalRequest);
+  const pendingSession = useStore((s) => s.pendingSession);
 
   const openActionModal = useCallback(() => {
     setActionModalCycle((c) => c + 1);
     setActionOpen(true);
   }, []);
+
+  useEffect(() => {
+    if (takeActionModalRequest > 0) {
+      setActionModalCycle((c) => c + 1);
+      setActionOpen(true);
+    }
+  }, [takeActionModalRequest]);
 
   return (
     <>
@@ -40,7 +50,8 @@ export function Dashboard({ showDevControls }: DashboardProps) {
                 <button
                   type="button"
                   onClick={() => startProfileMenuIntro()}
-                  className="shrink-0 border-2 border-paper/35 bg-black px-3 py-1.5 font-p5-display text-xs tracking-[0.2em] text-paper hover:border-persona-red hover:text-persona-red"
+                  aria-label="Open fullscreen menu"
+                  className="shrink-0 border-2 border-paper/35 bg-black px-3 py-1.5 font-p5-display text-xs tracking-[0.2em] text-paper outline-none hover:border-persona-red hover:text-persona-red focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
                 >
                   MENU
                 </button>
@@ -77,21 +88,48 @@ export function Dashboard({ showDevControls }: DashboardProps) {
             </p>
             <p className="font-marker max-w-md text-sm leading-relaxed text-paper/70 sm:text-base">
               Move between districts on the map — each stop paints a different sky behind you. Full pentagon
-              readout:{" "}
-              <PersonaNavLink
-                href="/stats"
-                className="font-p5-display text-persona-red hover:underline"
-              >
-                STATS
-              </PersonaNavLink>
-              .
+              readout on Stats; confidants live on Profile.
             </p>
-            <PersonaNavLink
-              href="/map"
-              className="font-p5-display border-2 border-persona-red bg-persona-red px-8 py-3 text-sm tracking-[0.25em] text-paper shadow-[6px_6px_0_0_rgba(255,255,255,0.2)] hover:bg-black hover:text-persona-red"
-            >
-              OPEN CITY MAP
-            </PersonaNavLink>
+            {pendingSession ? (
+              <div className="w-full max-w-md border-2 border-cyan-500/40 bg-cyan-950/25 px-4 py-3 text-left">
+                <p className="font-p5-display text-[10px] tracking-[0.3em] text-cyan-200/90">
+                  SESSION IN PROGRESS
+                </p>
+                <p className="font-marker mt-1 text-sm text-paper/85">
+                  Timer is running — use the bar at the bottom of the screen or{" "}
+                  <button
+                    type="button"
+                    onClick={openActionModal}
+                    className="text-persona-red underline decoration-persona-red/60 underline-offset-2 hover:text-paper"
+                  >
+                    open Take Action
+                  </button>{" "}
+                  to claim when it finishes.
+                </p>
+              </div>
+            ) : null}
+            <div className="flex w-full max-w-md flex-col items-center gap-4 sm:flex-row sm:flex-wrap sm:justify-center">
+              <PersonaNavLink
+                href="/map"
+                className="font-p5-display inline-flex min-h-11 min-w-[200px] items-center justify-center border-2 border-persona-red bg-persona-red px-8 py-3 text-sm tracking-[0.25em] text-paper shadow-[6px_6px_0_0_rgba(255,255,255,0.2)] hover:bg-black hover:text-persona-red"
+              >
+                OPEN CITY MAP
+              </PersonaNavLink>
+              <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 font-p5-display text-[10px] tracking-[0.28em] text-paper/55 sm:text-xs">
+                <PersonaNavLink href="/stats" className="text-paper/80 hover:text-persona-red">
+                  STATS
+                </PersonaNavLink>
+                <PersonaNavLink href="/missions" className="text-paper/80 hover:text-persona-red">
+                  MISSIONS
+                </PersonaNavLink>
+                <PersonaNavLink href="/calendar" className="text-paper/80 hover:text-persona-red">
+                  CALENDAR
+                </PersonaNavLink>
+                <PersonaNavLink href="/profile" className="text-paper/80 hover:text-persona-red">
+                  PROFILE
+                </PersonaNavLink>
+              </div>
+            </div>
           </section>
           {showDevControls ? (
             <div className="w-full max-w-3xl">

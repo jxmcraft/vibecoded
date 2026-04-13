@@ -3,14 +3,19 @@
 import { motion, useReducedMotion } from "framer-motion";
 
 import { DAILY_MISSION_IDS, DAILY_MISSIONS, XP_BUDGET_MISSION_MIN } from "@/data/dailyMissions";
+import { sundayWeekStartKey } from "@/lib/callingCardWeek";
 import { dateKeyFromDate } from "@/lib/dateKey";
 import { completedMissionIdsForDay } from "@/lib/missions";
+import { PersonaNavLink } from "@/components/ui/PersonaNavLink";
 import { useStore } from "@/store/useStore";
 
 export function DailyMissionsPanel() {
   const logs = useStore((s) => s.activityLogs);
+  const callingCard = useStore((s) => s.callingCard);
   const reduceMotion = useReducedMotion();
   const todayKey = dateKeyFromDate(new Date());
+  const weekStart = sundayWeekStartKey(new Date());
+  const needsCallingCard = callingCard == null || callingCard.weekStartKey !== weekStart;
   const done = completedMissionIdsForDay(logs, todayKey);
   const allComplete = DAILY_MISSION_IDS.every((id) => done.has(id));
 
@@ -59,6 +64,17 @@ export function DailyMissionsPanel() {
       {allComplete ? (
         <p className="font-bebas mt-2 text-center text-xs tracking-[0.25em] text-persona-red">
           READY — CLAIM XP TO TRIGGER
+        </p>
+      ) : null}
+      {needsCallingCard ? (
+        <p className="font-marker mt-3 text-center text-[11px] text-paper/55">
+          <PersonaNavLink
+            href="/missions"
+            className="font-bebas tracking-[0.15em] text-persona-red underline decoration-persona-red/50 underline-offset-2 hover:text-paper"
+          >
+            MISSIONS — SEND YOUR CALLING CARD
+          </PersonaNavLink>
+          <span className="text-paper/45"> (weekly goal, Sun–Sat)</span>
         </p>
       ) : null}
     </section>

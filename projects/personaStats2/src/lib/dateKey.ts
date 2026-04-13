@@ -36,3 +36,11 @@ function parseLocalDateKey(key: string): Date | null {
   if (dt.getFullYear() !== y || dt.getMonth() !== mo || dt.getDate() !== d) return null;
   return dt;
 }
+
+/** Whole calendar days from `startKey` to `endKey` (local dates); same day = 0. */
+export function daysBetweenDateKeys(startKey: string, endKey: string): number {
+  const a = parseLocalDateKey(startKey);
+  const b = parseLocalDateKey(endKey);
+  if (!a || !b) return Number.NaN;
+  return Math.round((utcDayNumber(b) - utcDayNumber(a)) / 86400000);
+}

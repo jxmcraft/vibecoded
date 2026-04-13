@@ -15,7 +15,10 @@ export function StoreGate({ children }: StoreGateProps) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    void Promise.resolve(useStore.persist.rehydrate()).finally(() => setReady(true));
+    void Promise.resolve(useStore.persist.rehydrate()).finally(() => {
+      useStore.getState().syncCallingCard();
+      setReady(true);
+    });
   }, []);
 
   if (!ready) {

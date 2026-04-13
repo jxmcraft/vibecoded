@@ -15,11 +15,15 @@ import { useStore } from "@/store/useStore";
 export function PersonaMusicPlayer() {
   const settings = useStore((s) => s.settings);
   const setSettings = useStore((s) => s.setSettings);
+  const bgmNowPlayingLabel = useStore((s) => s.bgmNowPlayingLabel);
 
   const resolvedTrackId = BGM_TRACKS.some((t) => t.id === settings.bgmTrackId)
     ? settings.bgmTrackId
     : DEFAULT_BGM_TRACK_ID;
   const track = bgmTrackById(resolvedTrackId);
+  const spinningLabel = settings.bgmShuffle
+    ? bgmNowPlayingLabel || "TIME SHUFFLE…"
+    : (track?.label ?? "—");
 
   return (
     <section
@@ -34,7 +38,7 @@ export function PersonaMusicPlayer() {
               NOW SPINNING
             </p>
             <p className="font-p5-display mt-1 max-w-[min(100%,28rem)] text-lg leading-snug text-paper sm:text-xl">
-              {track?.label ?? "—"}
+              {spinningLabel}
             </p>
           </div>
           <p className="font-p5-display text-[10px] tracking-[0.35em] text-paper/40">
@@ -63,7 +67,10 @@ export function PersonaMusicPlayer() {
             variant="chip"
             aria-label="Previous track"
             onClick={() =>
-              setSettings({ bgmTrackId: prevBgmTrackId(resolvedTrackId) })
+              setSettings({
+                bgmTrackId: prevBgmTrackId(resolvedTrackId),
+                bgmShuffle: false,
+              })
             }
             className="font-p5-display !px-3"
           >
@@ -82,7 +89,10 @@ export function PersonaMusicPlayer() {
             variant="chip"
             aria-label="Next track"
             onClick={() =>
-              setSettings({ bgmTrackId: nextBgmTrackId(resolvedTrackId) })
+              setSettings({
+                bgmTrackId: nextBgmTrackId(resolvedTrackId),
+                bgmShuffle: false,
+              })
             }
             className="font-p5-display !px-3"
           >

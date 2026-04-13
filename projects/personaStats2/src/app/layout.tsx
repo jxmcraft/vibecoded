@@ -52,7 +52,7 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} ${bebas.variable} ${permanentMarker.variable} ${persona5Menu.variable} h-full antialiased`}
     >
-      <body className="flex min-h-full flex-col bg-ink text-paper">
+      <body className="flex min-h-full flex-col bg-ink pb-32 text-paper">
         <PhantomAppShell>{children}</PhantomAppShell>
       </body>
     </html>

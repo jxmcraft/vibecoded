@@ -27,6 +27,17 @@ describe("levelFromTotalXp", () => {
       prev = L;
     }
   });
+
+  it("does not spike on the first point of XP", () => {
+    expect(levelFromTotalXp(1)).toBeLessThan(3);
+  });
+
+  it("keeps a typical first session in the low levels (not L30+)", () => {
+    const base = Math.round(xpEarned(60, BASE_XP_PER_MINUTE, 1.0));
+    expect(levelFromTotalXp(base)).toBeLessThan(15);
+    const hard = Math.round(xpEarned(60, BASE_XP_PER_MINUTE, 3.0));
+    expect(levelFromTotalXp(hard)).toBeLessThan(25);
+  });
 });
 
 describe("xpNextThreshold and level bands", () => {
